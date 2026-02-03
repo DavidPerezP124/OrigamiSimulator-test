@@ -1,0 +1,1 @@
+{"version":3,"file":"planarizeOverlaps.d.ts","sourceRoot":"","sources":["../../../src/graph/planarize/planarizeOverlaps.js"],"names":[],"mappings":"AAoDO,0HAVI,IAAI,YACJ,MAAM,GACJ;IACZ,MAAU,EAAE,IAAI,CAAC;IACjB,OAAW,EAAE;QACb,QAAc,EAAE;YAAE,GAAG,EAAE,MAAM,EAAE,CAAA;SAAE,CAAC;QAClC,KAAW,EAAE;YAAE,GAAG,EAAE,MAAM,EAAE,EAAE,CAAA;SAAE,CAAC;KAC5B,CAAA;CACF,CA2GH"}

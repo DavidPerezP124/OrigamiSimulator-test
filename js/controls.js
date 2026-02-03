@@ -2,7 +2,6 @@
  * Created by ghassaei on 10/7/16.
  */
 
-
 function initControls(globals){
 
     window.addEventListener('resize', function(){

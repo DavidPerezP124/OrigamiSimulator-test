@@ -416,16 +416,16 @@ function initPattern(globals){
             findType(verticesRaw, triangulationsRaw, triangulationFilter, $paths, $lines, $rects, $polygons, $polylines);
             findType(verticesRaw, hingesRaw, hingeFilter, $paths, $lines, $rects, $polygons, $polylines);
 
-            if (badColors.length>0){
-                badColors = _.uniq(badColors);
-                var string = "Some objects found with the following stroke colors:<br/><br/>";
-                _.each(badColors, function(color){
-                    string += "<span style='background:" + color + "' class='colorSwatch'></span>" + color + "<br/>";
-                });
-                string +=  "<br/>These objects were ignored.<br/>  Please check that your file is set up correctly, <br/>" +
-                    "see <b>File > Design Tips</b> for more information.";
-                globals.warn(string);
-            }
+            // if (badColors.length>0){
+            //     badColors = _.uniq(badColors);
+            //     var string = "Some objects found with the following stroke colors:<br/><br/>";
+            //     _.each(badColors, function(color){
+            //         string += "<span style='background:" + color + "' class='colorSwatch'></span>" + color + "<br/>";
+            //     });
+            //     string +=  "<br/>These objects were ignored.<br/>  Please check that your file is set up correctly, <br/>" +
+            //         "see <b>File > Design Tips</b> for more information.";
+            //     globals.warn(string);
+            // }
 
             // Now that loading is done, remove SVG from page DOM.
             _$svg.remove();
@@ -1140,10 +1140,74 @@ function initPattern(globals){
             globals.curvedFolding.saveSVG();
             return;
         }
-        if (globals.noCreasePatternAvailable()){
-            globals.warn("No crease pattern available.");
-            return;
+        if (globals.extension == "fold"){
+            var geo = new THREE.Geometry().fromBufferGeometry( globals.model.getGeometry() );
+
+    if (geo.vertices.length == 0 || geo.faces.length == 0) {
+        globals.warn("No geometry to save.");
+        return;
+    }
+
+    if (globals.exportScale != 1){
+        for (var i=0;i<geo.vertices.length;i++){
+            geo.vertices[i].multiplyScalar(globals.exportScale);
         }
+    }
+
+    var filename = $("#foldFilename").val();
+    if (filename == "") filename = globals.filename;
+
+    var json = {
+        file_spec: 1.1,
+        file_creator: "Origami Simulator: http://git.amandaghassaei.com/OrigamiSimulator/",
+        file_author: $("#foldAuthor").val(),
+        file_classes: ["singleModel"],
+        frame_title: filename,
+        frame_classes: ["foldedForm"],
+        frame_attributes: ["3D"],
+        frame_unit: globals.foldUnits,
+        vertices_coords: [],
+        edges_vertices: [],
+        edges_assignment: [],
+        faces_vertices: []
+    };
+
+    for (var i=0;i<geo.vertices.length;i++){
+        var vertex = geo.vertices[i];
+        json.vertices_coords.push([vertex.x, vertex.y, vertex.z]);
+    }
+
+    var useTriangulated = globals.triangulateFOLDexport;
+    if (!globals.includeCurves) {
+        var fold = globals.pattern.getFoldData(!useTriangulated);
+    } else {
+        var fold = globals.curvedFolding.getFoldData(!useTriangulated);
+    }
+    json.edges_vertices = fold.edges_vertices;
+    var assignment = [];
+    for (var i=0;i<fold.edges_assignment.length;i++){
+        if (fold.edges_assignment[i] == "C") assignment.push("B");
+        else assignment.push(fold.edges_assignment[i]);
+    }
+    json.edges_assignment = assignment;
+    json.faces_vertices = fold.faces_vertices;
+
+    if (globals.exportFoldAngle){
+        json.edges_foldAngle = fold.edges_foldAngle;
+    }
+    
+            const svg = ear.convert.foldToSvg(JSON.stringify(json, null, 4), { string: true });
+            var svgBlob = new Blob([svg], {type:"image/svg+xml;charset=utf-8"});
+            var svgUrl = URL.createObjectURL(svgBlob);
+            var downloadLink = document.createElement("a");
+            downloadLink.href = svgUrl;
+            downloadLink.download =  globals.filename + ".svg";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            return
+        }
+
         gtag('event', 'saveCP', { 'CC': false });
         var serializer = new XMLSerializer();
         var source = serializer.serializeToString($("#svgViewer>svg").get(0));

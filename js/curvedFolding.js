@@ -1250,16 +1250,16 @@ function initCurvedFolding(globals) {
             findType(verticesRaw, triangulationsRaw, triangulationFilter, $paths, $lines, $rects, $polygons, $polylines, $ellipses, $circles);
             findType(verticesRaw, hingesRaw, hingeFilter, $paths, $lines, $rects, $polygons, $polylines, $ellipses, $circles);
 
-            if (badColors.length>0){
-                badColors = _.uniq(badColors);
-                var string = "Some objects found with the following stroke colors:<br/><br/>";
-                _.each(badColors, function(color){
-                    string += "<span style='background:" + color + "' class='colorSwatch'></span>" + color + "<br/>";
-                });
-                string +=  "<br/>These objects were ignored.<br/>  Please check that your file is set up correctly, <br/>" +
-                    "see <b>File > Design Tips</b> for more information.";
-                globals.warn(string);
-            }
+            // if (badColors.length>0){
+            //     badColors = _.uniq(badColors);
+            //     var string = "Some objects found with the following stroke colors:<br/><br/>";
+            //     _.each(badColors, function(color){
+            //         string += "<span style='background:" + color + "' class='colorSwatch'></span>" + color + "<br/>";
+            //     });
+            //     string +=  "<br/>These objects were ignored.<br/>  Please check that your file is set up correctly, <br/>" +
+            //         "see <b>File > Design Tips</b> for more information.";
+            //     globals.warn(string);
+            // }
 
             // Now that loading is done, remove SVG from page DOM.
             _$svg.remove();

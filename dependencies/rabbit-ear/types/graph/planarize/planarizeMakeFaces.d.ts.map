@@ -1,0 +1,1 @@
+{"version":3,"file":"planarizeMakeFaces.d.ts","sourceRoot":"","sources":["../../../src/graph/planarize/planarizeMakeFaces.js"],"names":[],"mappings":"AAgHO,6CAZI,IAAI,YAEJ,IAAI,mCAEJ;IAAE,KAAK,EAAE;QAAE,GAAG,EAAE,MAAM,EAAE,EAAE,CAAA;KAAE,CAAA;CAAC,GAC3B;IACZ,cAAkB,EAAE,MAAM,EAAE,EAAE,CAAC;IAC/B,WAAe,EAAE,MAAM,EAAE,EAAE,CAAC;IAC5B,OAAW,EAAE,MAAM,EAAE,EAAE,CAAC;CACrB,CAqBH"}

@@ -2,10 +2,12 @@
  * Created by amandaghassaei on 5/6/17.
  */
 
-
 function initImporter(globals){
 
     var reader = new FileReader();
+    let monitoredFolderHandle = null; // Handle to the monitored folder
+    let importedFiles = new Set(); // Set to keep track of imported files
+    const pollingInterval = 5000; // Poll every 5 seconds
 
     function importDemoFile(url){
         var extension = url.split(".");
@@ -31,6 +33,87 @@ function initImporter(globals){
                 });
         } else {
             console.warn("unknown extension: " + extension);
+        }
+    }
+
+    // Function to handle folder selection
+    async function selectFolder() {
+        if ('showDirectoryPicker' in window) {
+            try {
+                // Prompt user to select a directory
+                const dirHandle = await window.showDirectoryPicker();
+                monitoredFolderHandle = dirHandle;
+                importedFiles = new Set(); // Reset the imported files set
+                console.log(`Monitoring folder: ${dirHandle.name}`);
+
+                // Start monitoring the folder
+                monitorFolder();
+            } catch (err) {
+                console.error("Folder selection canceled or failed.", err);
+            }
+        } else {
+            alert("Your browser does not support the File System Access API. Please use a Chromium-based browser like Chrome or Edge.");
+        }
+    }
+
+    // Function to monitor the selected folder for new SVG files
+    async function monitorFolder() {
+        if (!monitoredFolderHandle) return;
+
+        // Initial scan
+        await scanFolder();
+
+        // Set up periodic scanning
+        setInterval(async () => {
+            await scanFolder();
+        }, pollingInterval);
+    }
+
+    // Function to scan the folder for new SVG files
+    async function scanFolder() {
+        try {
+            for await (const [name, handle] of monitoredFolderHandle.entries()) {
+                if (handle.kind === 'file' && name.toLowerCase().endsWith('.svg')) {
+                    if (!importedFiles.has(name)) {
+                        console.log(`New SVG detected: ${name}`);
+                        await importSVGFile(handle, name);
+                        importedFiles.add(name);
+                        // Uncomment the next line if you want to import only the first new file per scan
+                        // break;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error scanning folder:", err);
+        }
+    }
+
+    // Function to import an SVG file
+    async function importSVGFile(fileHandle, fileName) {
+        try {
+            const file = await fileHandle.getFile();
+            const arrayBuffer = await file.arrayBuffer();
+            const blob = new Blob([arrayBuffer], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+
+            // Update globals
+            globals.url = url;
+            globals.filename = fileName;
+            globals.extension = 'svg';
+
+            // Directly import the SVG without showing a modal
+            if (!globals.includeCurves) {
+                globals.pattern.loadSVG(url, true);
+            } else {
+                globals.curvedFolding.loadSVG(url, true);
+            }
+
+            // Revoke the object URL after import to free memory
+            URL.revokeObjectURL(url);
+
+            console.log(`Imported SVG: ${fileName}`);
+        } catch (err) {
+            console.error(`Error importing SVG file ${fileName}:`, err);
         }
     }
 
@@ -61,6 +144,8 @@ function initImporter(globals){
                     } else {
                         globals.curvedFolding.loadSVG(reader.result);
                     }
+                    // Revoke the object URL after import to free memory
+                    URL.revokeObjectURL(reader.result);
                 });
             }
             reader.readAsDataURL(blob);
@@ -92,6 +177,8 @@ function initImporter(globals){
                         } else {
                             globals.curvedFolding.loadSVG(reader.result);
                         }
+                        // Revoke the object URL after import to free memory
+                        URL.revokeObjectURL(reader.result);
                     });
                 }
             }(file);
@@ -121,7 +208,7 @@ function initImporter(globals){
                             delete fold.edges_foldAngles;
                         }
                         if (fold.edges_foldAngle){
-                            globals.pattern.setFoldData(fold);
+                            globals.pattern.setFoldData(fold, true);
                             return;
                         }
                         $("#importFoldModal").modal("show");
@@ -185,6 +272,10 @@ function initImporter(globals){
         }
     }
 
+    // Add event listener for "Select Folder" button
+    document.getElementById('select-folder-button').addEventListener('click', selectFolder);
+
+    // Existing drag-and-drop handlers
     window.addEventListener('drop', function(e) {
         e.preventDefault();
         if (e.dataTransfer.items) {

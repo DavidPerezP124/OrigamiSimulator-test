@@ -11,13 +11,6 @@
     <meta property="og:image" content="https://origamisimulator.org/assets/doc/strain.jpg">
     <meta property="og:url" content="https://origamisimulator.org/">
 
-	<meta name="twitter:site" content="@amandaghassaei">
-	<meta name="twitter:creator" content="Amanda Ghassaei">
-    <meta name="twitter:title" content="Origami Simulator">
-    <meta name="twitter:description" content=" Real-time WebGL origami simulator app">
-	<meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:image" content="https://origamisimulator.org/assets/doc/strain.jpg">
-
     <link href="dependencies/bootstrap.min.css" rel="stylesheet" type="text/css"/>
     <link rel="stylesheet" type="text/css" href="dependencies/flat-ui.min.css"/>
     <link rel="stylesheet" type="text/css" href="dependencies/jquery-ui.min.css"/>
@@ -760,6 +753,7 @@
     <script type="text/javascript" src="dependencies/fold.js"></script>
     <script type="text/javascript" src="dependencies/CCapture.all.min.js"></script>
     <script type="text/javascript" src="dependencies/numeric-1.2.6.js"></script>
+    <script type="module" src="dependencies/rabbit-ear/rabbit-ear.js"></script>
 
     <!--<script type="text/javascript" src="dependencies/EffectComposer.js"></script>-->
     <!--<script type="text/javascript" src="dependencies/MaskPass.js"></script>-->
@@ -772,6 +766,7 @@
     <script type="text/javascript" src="dependencies/WebVR.js"></script>
     <script type="text/javascript" src="dependencies/VRController.js"></script>
     <script type="text/javascript" src="dependencies/datguivr.js"></script><!--made a lot of changes, don't replace with minified-->
+    <script type="text/javascript" src="dependencies/saveFOLD.js"></script>
 
     <script type="text/javascript" src="js/dynamic/GLBoilerplate.js"></script>
     <script type="text/javascript" src="js/dynamic/GPUMath.js"></script>
@@ -787,8 +782,8 @@
     <script type="text/javascript" src="js/dynamic/dynamicSolver.js"></script>
     <script type="text/javascript" src="js/rigidSolver.js"></script>
     <script type="text/javascript" src="js/pattern.js"></script>
+    <script type="text/javascript" src="js/legGenerator.js"></script>
     <script type="text/javascript" src="js/saveSTL.js"></script>
-    <script type="text/javascript" src="js/saveFOLD.js"></script>
     <script type="text/javascript" src="js/importer.js"></script>
     <script type="text/javascript" src="js/VRInterface.js"></script>
     <script type="text/javascript" src="js/videoAnimator.js"></script>
@@ -1123,7 +1118,42 @@
             <!--Allow User Interaction-->
         <!--</label>-->
     <!--</div><br/><br/>-->
+    <!-- Add this button to your HTML file where appropriate -->
+    <button id="select-folder-button">Select Folder to Monitor</button>
     <a href="#" id="showAdvancedOptions">Show Advanced Options</a><br/><br/>
+
+    <div id="legGeneratorPanel" class="well" style="max-width:420px; margin-top:10px;">
+        <b>Leg Pattern (JS)</b><br/><span class="smallTxt">Ports the leg.ipynb generator and feeds the simulator directly.</span><br/><br/>
+        <div class="form-group">
+            <label for="legSegments">Segments</label>
+            <input id="legSegments" type="number" min="1" max="20" step="1" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="legConvergeAngle">Converge Angle (deg)</label>
+            <input id="legConvergeAngle" type="number" min="0" max="45" step="1" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="legInnerAngleDev">Inner Angle Deviation (deg)</label>
+            <input id="legInnerAngleDev" type="number" min="-45" max="45" step="1" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="legTotalWidth">Total Width</label>
+            <input id="legTotalWidth" type="number" min="1" max="50" step="0.5" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="legTotalHeight">Total Height</label>
+            <input id="legTotalHeight" type="number" min="1" max="50" step="0.5" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="legInnerLineColor">Inner Line Color</label>
+            <input id="legInnerLineColor" type="text" class="form-control" placeholder="e.g. red or #00f" />
+        </div>
+        <label class="checkbox" for="legAutoUpdate">
+            <input id="legAutoUpdate" data-toggle="checkbox" class="custom-checkbox" type="checkbox">
+            <span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span> Auto update
+        </label>
+        <a href="#" id="legGenerateButton" class="btn btn-primary btn-block" style="margin-top:10px;">Update Crease</a>
+    </div>
 
 </div>
 

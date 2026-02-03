@@ -1,0 +1,58 @@
+/* Rabbit Ear 0.9.4 alpha 2024-04-20 (c) Kraft, GNU GPLv3 License */
+
+import Messages from '../../environment/messages.js';
+import { normalize, subtract, dot } from '../../math/vector.js';
+import { makeFacesNormal } from '../normals.js';
+import { makeFacesEdgesFromVertices } from './facesEdges.js';
+import { makeEdgesFacesUnsorted } from './edgesFaces.js';
+import { makeFacesCenterQuick } from './faces.js';
+
+const assignment_angles = { M: -180, m: -180, V: 180, v: 180 };
+const makeEdgesFoldAngle = ({ edges_assignment }) => edges_assignment
+	.map(a => assignment_angles[a] || 0);
+const makeEdgesFoldAngleFromFaces = ({
+	vertices_coords,
+	edges_vertices,
+	edges_faces,
+	edges_assignment,
+	faces_vertices,
+	faces_edges,
+	faces_normal,
+	faces_center,
+}) => {
+	if (!edges_faces) {
+		if (!faces_edges) {
+			faces_edges = makeFacesEdgesFromVertices({ edges_vertices, faces_vertices });
+		}
+		edges_faces = makeEdgesFacesUnsorted({ edges_vertices, faces_edges });
+	}
+	if (!faces_normal) {
+		faces_normal = makeFacesNormal({ vertices_coords, faces_vertices });
+	}
+	if (!faces_center) {
+		faces_center = makeFacesCenterQuick({ vertices_coords, faces_vertices });
+	}
+	return edges_faces.map((faces, e) => {
+		if (faces.length > 2) { throw new Error(Messages.manifold); }
+		if (faces.length < 2) { return 0; }
+		const a = faces_normal[faces[0]];
+		const b = faces_normal[faces[1]];
+		const a2b = normalize(subtract(
+			faces_center[faces[1]],
+			faces_center[faces[0]],
+		));
+		let sign = Math.sign(dot(a, a2b));
+		if (sign === 0) {
+			if (edges_assignment && edges_assignment[e]) {
+				if (edges_assignment[e] === "F" || edges_assignment[e] === "F") { sign = 0; }
+				if (edges_assignment[e] === "M" || edges_assignment[e] === "m") { sign = -1; }
+				if (edges_assignment[e] === "V" || edges_assignment[e] === "v") { sign = 1; }
+			} else {
+				throw new Error(Messages.flatFoldAngles);
+			}
+		}
+		return (Math.acos(dot(a, b)) * (180 / Math.PI)) * sign;
+	});
+};
+
+export { makeEdgesFoldAngle, makeEdgesFoldAngleFromFaces };

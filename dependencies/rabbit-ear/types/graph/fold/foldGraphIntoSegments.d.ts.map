@@ -1,0 +1,1 @@
+{"version":3,"file":"foldGraphIntoSegments.d.ts","sourceRoot":"","sources":["../../../src/graph/fold/foldGraphIntoSegments.js"],"names":[],"mappings":"AAuDO,yJAbI,IAAI,sBACJ,QAAQ,eACR,MAAM,YACN,MAAM,GACJ;IACZ,aAAiB,EAAE,CAAC,aAAa,GAAC,eAAe,CAAC,EAAE,CAAC;IACrD,UAAc,EAAE,MAAM,CAAC;IACvB,MAAU,EAAE,CAAC,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC;CAC5B,EAAE,CAkFL"}

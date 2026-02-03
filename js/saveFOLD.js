@@ -1,6 +1,4 @@
-/**
- * Created by amandaghassaei on 5/6/17.
- */
+import { saveAs } from "../dependencies/FileSaver.min";
 
 function saveFOLD(){
 
@@ -58,7 +56,7 @@ function saveFOLD(){
     if (globals.exportFoldAngle){
         json.edges_foldAngle = fold.edges_foldAngle;
     }
-
+    
     var blob = new Blob([JSON.stringify(json, null, 4)], {type: 'application/octet-binary'});
     saveAs(blob, filename + ".fold");
 }

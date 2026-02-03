@@ -1,0 +1,20 @@
+/* Rabbit Ear 0.9.4 alpha 2024-04-20 (c) Kraft, GNU GPLv3 License */
+
+const makeUUID = () => Math.random()
+	.toString(36)
+	.replace(/[^a-z]+/g, "")
+	.concat("aaaaa")
+	.substring(0, 5);
+const toCamel = (s) => s
+	.replace(/([-_][a-z])/ig, $1 => $1
+		.toUpperCase()
+		.replace("-", "")
+		.replace("_", ""));
+const toKebab = (s) => s
+	.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+	.replace(/([A-Z])([A-Z])(?=[a-z])/g, "$1-$2")
+	.toLowerCase();
+const capitalized = (s) => s
+	.charAt(0).toUpperCase() + s.slice(1);
+
+export { capitalized, makeUUID, toCamel, toKebab };

@@ -1,0 +1,1 @@
+{"version":3,"file":"quaternion.d.ts","sourceRoot":"","sources":["../../src/math/quaternion.js"],"names":[],"mappings":"AAyBO,4CAJI,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,KACxB,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,GACtB,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,CAQ5C;AAQM,yCAHI,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,GAC9B,MAAM,EAAE,CAYnB"}

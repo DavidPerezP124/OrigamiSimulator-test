@@ -1,0 +1,1 @@
+{"version":3,"file":"planarizeCollinearEdges.d.ts","sourceRoot":"","sources":["../../../src/graph/planarize/planarizeCollinearEdges.js"],"names":[],"mappings":"AAoIO,iHAZI,IAAI,YACJ,MAAM,GACJ;IACZ,MAAU,EAAE,IAAI,CAAC;IACjB,OAAW,EAAE;QACb,QAAc,EAAE;YAAE,GAAG,EAAE,MAAM,EAAE,CAAA;SAAE,CAAC;QAClC,KAAW,EAAE;YAAE,GAAG,EAAE,MAAM,EAAE,EAAE,CAAA;SAAE,CAAC;KAC5B,CAAA;CACF,CA6IH"}

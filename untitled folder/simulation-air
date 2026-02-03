@@ -1,0 +1,142 @@
+import simpy
+
+#------------------------------------------------------------
+# Parameters (tweak these based on your system/paper)
+#------------------------------------------------------------
+MAX_PRESSURE = 10.0  # Max capacity for each chamber
+FILL_RATE = 1.0      # Units of air per time-step to fill
+VACUUM_RATE = 1.0    # Units of air per time-step to remove
+STEP_DURATION = 5    # Duration (in time units) of one inflation/deflation step
+SIM_TIME = 50        # Total simulation time
+
+#------------------------------------------------------------
+# Chambers, Supply, and Vacuum
+#------------------------------------------------------------
+def setup_system(env):
+    """
+    Set up containers for supply, chambers, escape, and vacuum sink.
+    Returns a dictionary of containers.
+    """
+    containers = {}
+    # Infinite (or large) air supply
+    containers['supply'] = simpy.Container(env, capacity=float('inf'), init=float('inf'))
+    
+    # Chambers 1, 2, 3, 4
+    for i in range(1, 5):
+        containers[f'chamber{i}'] = simpy.Container(env, capacity=MAX_PRESSURE, init=0)
+    
+    # Escape container (overflow)
+    containers['escape'] = simpy.Container(env, capacity=float('inf'), init=0)
+    
+    # Vacuum sink (for deflation)
+    containers['vacuum'] = simpy.Container(env, capacity=float('inf'), init=0)
+    
+    return containers
+
+def fill_chamber(env, supply, chamber, escape):
+    """
+    Continuously fill a given chamber from supply at FILL_RATE,
+    respecting max capacity. Excess flows to escape.
+    """
+    try:
+        while True:
+            # Calculate available space in the chamber
+            space_left = chamber.capacity - chamber.level
+            # Attempt to fill up to FILL_RATE
+            amount_to_fill = min(FILL_RATE, space_left)
+            
+            # Check if supply has enough
+            actual_fill = min(amount_to_fill, supply.level)
+            
+            if actual_fill > 0:
+                yield supply.get(actual_fill)
+                yield chamber.put(actual_fill)
+            
+            # If space_left < FILL_RATE, we have potential overflow:
+            overflow = FILL_RATE - amount_to_fill
+            if overflow > 0:
+                # If our logic attempts to fill more than the space left,
+                # we push the difference to the escape container
+                yield escape.put(overflow)
+            
+            # Let the process wait 1 time unit before next fill iteration
+            yield env.timeout(1)
+    except simpy.exceptions.Interrupt:
+        return
+
+def vacuum_chamber(env, chamber, vacuum):
+    """
+    Continuously remove air from a chamber at VACUUM_RATE,
+    sending the removed air into the vacuum container.
+    """
+    while True:
+        # We can only remove as much as is in the chamber
+        amount_to_remove = min(chamber.level, VACUUM_RATE)
+        if amount_to_remove > 0:
+            yield chamber.get(amount_to_remove)
+            yield vacuum.put(amount_to_remove)
+        
+        # Wait 1 time unit before next removal iteration
+        yield env.timeout(1)
+
+def alternator(env, containers):
+    """
+    Control logic to alternate inflation/deflation:
+    - Step 1: fill chambers 1 & 3, vacuum 2 & 4 for STEP_DURATION
+    - Step 2: fill chambers 2 & 4, vacuum 1 & 3 for STEP_DURATION
+    - Repeat
+    """
+    while True:
+        # Turn on fill for 1 & 3, vacuum for 2 & 4
+        procs_fill = []
+        procs_vac = []
+        
+        # Start processes for fill (1 & 3)
+        procs_fill.append(env.process(fill_chamber(env, containers['supply'], containers['chamber1'], containers['escape'])))
+        procs_fill.append(env.process(fill_chamber(env, containers['supply'], containers['chamber3'], containers['escape'])))
+        
+        # Start processes for vacuum (2 & 4)
+        procs_vac.append(env.process(vacuum_chamber(env, containers['chamber2'], containers['vacuum'])))
+        procs_vac.append(env.process(vacuum_chamber(env, containers['chamber4'], containers['vacuum'])))
+        
+        # Let them run for STEP_DURATION
+        yield env.timeout(STEP_DURATION)
+        
+        # Kill the processes for step 1
+        for p in procs_fill + procs_vac:
+            p.interrupt()
+        
+        # Next step: fill 2 & 4, vacuum 1 & 3
+        procs_fill = []
+        procs_vac = []
+        
+        procs_fill.append(env.process(fill_chamber(env, containers['supply'], containers['chamber2'], containers['escape'])))
+        procs_fill.append(env.process(fill_chamber(env, containers['supply'], containers['chamber4'], containers['escape'])))
+        
+        procs_vac.append(env.process(vacuum_chamber(env, containers['chamber1'], containers['vacuum'])))
+        procs_vac.append(env.process(vacuum_chamber(env, containers['chamber3'], containers['vacuum'])))
+        
+        yield env.timeout(STEP_DURATION)
+        
+        # Kill processes for step 2
+        for p in procs_fill + procs_vac:
+            p.interrupt()
+
+def run_simulation():
+    """
+    Main simulation driver.
+    """
+    env = simpy.Environment()
+    containers = setup_system(env)
+    env.process(alternator(env, containers))
+    
+    env.run(until=SIM_TIME)
+    
+    # Print final chamber levels
+    for i in range(1, 5):
+        print(f"Chamber {i} final level: {containers[f'chamber{i}'].level}")
+    print(f"Escape container final level: {containers['escape'].level}")
+    print(f"Vacuum container final level: {containers['vacuum'].level}")
+
+if __name__ == "__main__":
+    run_simulation()
