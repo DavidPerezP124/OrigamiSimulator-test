@@ -9,6 +9,7 @@ function initLegGenerator(globals){
         convergeAngle: 5,
         innerAngleDev: 2,
         innerLineColor: "red",
+        segmentDecreasePct: 0,
         totalWidth: 15,
         totalHeight: 3,
         autoUpdate: true
@@ -79,13 +80,30 @@ function initLegGenerator(globals){
         const innerLineColor = params.innerLineColor;
         const totalWidth = params.totalWidth;
         const totalHeight = params.totalHeight;
+        const segmentDecreasePct = params.segmentDecreasePct;
 
         const H = totalHeight / 2;
         const caRad = deg2rad(convergeAngle);
 
-        const xCoords = [];
-        for (let i = 0; i <= numSegments; i++){
-            xCoords.push(totalWidth * i / numSegments);
+        const xCoords = [0];
+        if (segmentDecreasePct <= 0){
+            for (let i = 1; i <= numSegments; i++){
+                xCoords.push(totalWidth * i / numSegments);
+            }
+        } else {
+            const ratio = Math.max(0.01, 1 - segmentDecreasePct / 100);
+            const lengths = [];
+            let segLen = 1;
+            let sum = 0;
+            for (let i = 0; i < numSegments; i++){
+                lengths.push(segLen);
+                sum += segLen;
+                segLen *= ratio;
+            }
+            const scale = totalWidth / sum;
+            for (let i = 0; i < numSegments; i++){
+                xCoords.push(xCoords[i] + lengths[i] * scale);
+            }
         }
 
         const topAngles = [];
@@ -292,6 +310,7 @@ function initLegGenerator(globals){
             state.innerAngleDev = readNumber("#legInnerAngleDev", state.innerAngleDev);
             state.totalWidth = readNumber("#legTotalWidth", state.totalWidth);
             state.totalHeight = readNumber("#legTotalHeight", state.totalHeight);
+            state.segmentDecreasePct = readNumber("#legSegmentDecreasePct", state.segmentDecreasePct);
             state.innerLineColor = $("#legInnerLineColor").val() || state.innerLineColor;
             state.autoUpdate = $("#legAutoUpdate").is(":checked");
         }
@@ -314,6 +333,7 @@ function initLegGenerator(globals){
         $("#legInnerAngleDev").val(state.innerAngleDev);
         $("#legTotalWidth").val(state.totalWidth);
         $("#legTotalHeight").val(state.totalHeight);
+        $("#legSegmentDecreasePct").val(state.segmentDecreasePct);
         $("#legInnerLineColor").val(state.innerLineColor);
         $("#legAutoUpdate").prop("checked", state.autoUpdate);
         generateAndSet();
