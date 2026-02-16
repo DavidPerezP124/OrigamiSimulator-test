@@ -1684,7 +1684,7 @@ function initCurvedFolding(globals) {
         var faces = fold.faces_vertices;
         for (var i=0;i<fold.edges_vertices.length;i++){
             var assignment = fold.edges_assignment[i];
-            if (assignment !== "M" && assignment !== "V" && assignment !== "F") continue;
+            if (assignment !== "M" && assignment !== "V") continue;
             var edge = fold.edges_vertices[i];
             var v1 = edge[0];
             var v2 = edge[1];
@@ -2554,6 +2554,11 @@ function initCurvedFolding(globals) {
         var edges = fold.edges_vertices;
         var foldAngles = fold.edges_foldAngle;
         var assignments = fold.edges_assignment;
+        var edgesIsPattern = fold.edges_isPattern;
+        if (!edgesIsPattern || edgesIsPattern.length !== edges.length){
+            edgesIsPattern = [];
+            for (var i=0;i<edges.length;i++) edgesIsPattern.push(true);
+        }
         var triangulatedFaces = [];
         for (var i=0;i<faces.length;i++){
 
@@ -2576,12 +2581,14 @@ function initCurvedFolding(globals) {
                     edges.push([face[1], face[3]]);
                     foldAngles.push(0);
                     assignments.push("F");
+                    edgesIsPattern.push(false);
                     triangulatedFaces.push([face[0], face[1], face[3]]);
                     triangulatedFaces.push([face[1], face[2], face[3]]);
                 } else {
                     edges.push([face[0], face[2]]);
                     foldAngles.push(0);
                     assignments.push("F");
+                    edgesIsPattern.push(false);
                     triangulatedFaces.push([face[0], face[1], face[2]]);
                     triangulatedFaces.push([face[0], face[2], face[3]]);
                 }
@@ -2711,16 +2718,19 @@ function initCurvedFolding(globals) {
                         edges.push([tri[0], tri[1]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     } else if (k==1){
                         faceEdges.push(edges.length);
                         edges.push([tri[2], tri[1]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     } else if (k==2){
                         faceEdges.push(edges.length);
                         edges.push([tri[2], tri[0]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     }
                 }
 
@@ -2728,6 +2738,7 @@ function initCurvedFolding(globals) {
             }
         }
         fold.faces_vertices = triangulatedFaces;
+        fold.edges_isPattern = edgesIsPattern;
         return fold;
     }
 

@@ -137,7 +137,7 @@ function initThreeView(globals) {
             globals.model.sync();
         }
         if (globals.simNeedsSync){
-            globals.model.syncSolver();
+            if (globals.dynamicSolver) globals.model.syncSolver();
         }
         if (globals.simulationRunning) globals.model.step();
         if (globals.vrEnabled){

@@ -3,16 +3,54 @@
  */
 
 function makeSaveGEO(doublesided){
-    var geo = new THREE.Geometry().fromBufferGeometry( globals.model.getGeometry() );
+    var sourceGeo = globals.model.getGeometry();
+    if (globals.simType == "thick") {
+        var thickGeo = globals.model.buildThickExportGeometry
+            ? globals.model.buildThickExportGeometry()
+            : (globals.model.getThickGeometry && globals.model.getThickGeometry());
+        if (thickGeo) sourceGeo = thickGeo;
+    }
 
-    if (geo.vertices.length == 0 || geo.faces.length == 0) {
+    var geo = sourceGeo.clone();
+    if (geo.index) geo = geo.toNonIndexed();
+
+    var pos = geo.attributes.position;
+    if (!pos || pos.count == 0) {
         globals.warn("No geometry to save.");
         return;
     }
 
-    for (var i=0;i<geo.vertices.length;i++){
-        geo.vertices[i].multiplyScalar(globals.exportScale/globals.scale);
+    var scale = globals.exportScale / globals.scale;
+    var verts = new Float32Array(pos.array.length);
+    for (var i=0;i<pos.array.length;i+=3){
+        verts[i] = pos.array[i] * scale;
+        verts[i+1] = pos.array[i+1] * scale;
+        verts[i+2] = pos.array[i+2] * scale;
     }
+
+    if (doublesided){
+        var triCount = verts.length / 9;
+        var doubled = new Float32Array(verts.length * 2);
+        var write = 0;
+        for (var t=0;t<triCount;t++){
+            var base = t * 9;
+            for (var k=0;k<9;k++) doubled[write++] = verts[base + k];
+            doubled[write++] = verts[base];
+            doubled[write++] = verts[base+1];
+            doubled[write++] = verts[base+2];
+            doubled[write++] = verts[base+6];
+            doubled[write++] = verts[base+7];
+            doubled[write++] = verts[base+8];
+            doubled[write++] = verts[base+3];
+            doubled[write++] = verts[base+4];
+            doubled[write++] = verts[base+5];
+        }
+        verts = doubled;
+    }
+
+    geo = new THREE.BufferGeometry();
+    geo.addAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.computeVertexNormals();
 
 
     // if (globals.thickenModel){
@@ -77,18 +115,15 @@ function makeSaveGEO(doublesided){
 
 
 
-    if (doublesided){
-        var numFaces = geo.faces.length;
-        for (var i=0;i<numFaces;i++){
-            var face = geo.faces[i];
-            geo.faces.push(new THREE.Face3(face.a, face.c, face.b));
-        }
-    }
-
     return geo;
 }
 
 function saveSTL(){
+
+    if (globals.simType == "thick" && globals.model.ensureThickGeometry) {
+        globals.model.ensureThickGeometry();
+        if (globals.model.updateThickPanelGeometry) globals.model.updateThickPanelGeometry();
+    }
 
     var data = [];
     data.push({geo: makeSaveGEO(globals.doublesidedSTL), offset:new THREE.Vector3(0,0,0), orientation:new THREE.Quaternion(0,0,0,1)});

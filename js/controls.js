@@ -436,10 +436,19 @@ function initControls(globals){
     });
 
 
+    function updateThickPanelUI(){
+        if (globals.simType == "thick") $("#thickPanelSettings").show();
+        else $("#thickPanelSettings").hide();
+    }
+
     setRadio("simType", globals.simType, function(val){
         globals.simType = val;
         globals.simNeedsSync = true;
+        if (globals.model) globals.model.updateMeshVisibility();
+        updateThickPanelUI();
+        if (globals.simType == "thick" && globals.model) globals.model.updateThickPanelGeometry();
     });
+    updateThickPanelUI();
 
     setSliderInput("#axialStiffness", globals.axialStiffness, 10, 100, 1, function(val){
         globals.axialStiffness = val;
@@ -464,6 +473,20 @@ function initControls(globals){
     setSliderInput("#percentDamping", globals.percentDamping, 0.01, 0.5, 0.01, function(val){
         globals.percentDamping = val;
         globals.materialHasChanged = true;
+    });
+
+    setSliderInput("#panelThickness", globals.panelThickness, 0, 0.2, 0.001, function(val){
+        globals.panelThickness = val;
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+    });
+    setSliderInput("#minHingeGap", globals.minHingeGap, 0, 0.1, 0.001, function(val){
+        globals.minHingeGap = val;
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+    });
+    $("#thickLinkageType").val(globals.thickLinkageType);
+    $("#thickLinkageType").on("change", function(){
+        globals.thickLinkageType = $(this).val();
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
     });
 
     var creasePercentSlider = setSliderInput("#creasePercent", globals.creasePercent*100, -100, 100, 1, function(val){
@@ -942,4 +965,3 @@ function initControls(globals){
         setSliderInputVal: setSliderInputVal
     }
 }
-

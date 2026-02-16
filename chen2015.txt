@@ -1,0 +1,351 @@
+              RESEARCH
+                                       ◥                                                                                                             can still be designed based on a zero-thickness
+                REPORTS                                                                                                                              rigid sheet, and these patterns can consequently
+                                                                                                                                                     besynthesizedforathickrigidpanel.Weassume
+                                                                                                                                                     that thick panels are rigid with nonzero thick-
+              APPLIEDORIGAMI                                                                                                                         ness and that fold lines, equivalent to creases in
+                                                                                                                                                     zero-thickness paper and revolute joints in link-
+              Origamiofthickpanels                                                                                                                   ages, can only be placed on the faces of a thick
+                                                                                                                                                     panel,andnofoldlinesalongthedepthofthe
+                                                                                                                                                     panels are permitted.
+                              1               1                 2                                                                                       Apartially folded single-vertex four-crease ori-
+              YanChen, RuiPeng, ZhongYou *
+                                                                                                                                                     gami pattern of a zero-thickness rigid sheet is
+              Origami patterns, including the rigid origami patterns in which flat inflexible sheets are joined                                      showninFig.1A.Thispatternisthebasicele-
+              bycreases, are primarily created for zero-thickness sheets. In order to apply them to fold                                             ment in many well-known origami forms, such
+              structures such as roofs, solar panels, and space mirrors, for which thickness cannot be                                               as the Miura-ori and the square-twist pattern.
+              disregarded,various methods have been suggested. However, they generally involve adding                                                Four creases divide the sheet into four portions,
+                                                                                                                                                     withsectoranglesa ,a ,a ,anda ,respective-
+              materials to or offsetting panels away from the idealized sheet without altering the kinematic                                                                  12   23   34         41
+              modelusedtosimulatefolding.Wedevelopacomprehensivekinematicsynthesisfor rigid                                                          ly,andthesumoftheseanglesequals2p.Tobe
+              origami of thick panels that differs from the existing kinematic model but is capable of                                               flat foldable—the folded origami can be pressed
+                                                                                                                                                     flat eventually—a        +a =a +a =pmustbe
+              reproducing motions identical to that of zero-thickness origami.The approach, proven to be                                                                    12     34     23     41
+              effective for typical origami, can be readily applied to fold real engineering structures.                                             satisfied (10).
+                                                                                                                                                        The kinematic motion of this origami can be
+                                                                                                                                                     modeledasaspherical4Rlinkage.Ithasasingle
+                       rigami is the art of folding essentially two-              of spherical linkage assemblies. This has led us                   degree of freedom, and the relationship among
+                       dimensional materials such as paper into                   toquestionwhatarigorousequivalentkinematic                         four dihedral angles ϕ , ϕ , ϕ ,andϕ can be
+                                                                                                                                                                                   1    2    3           4
+                       three-dimensional objects. It has recently                 model of this type of origami should be, and                       obtained analytically (11)
+                       gained popularity among scientists and en-                 whether the model can be generalized and ap-                                                                                                  on July 23, 2015 on July 23, 2015 on July 23, 2015 on July 23, 2015 on July 23, 2015
+              Ogineersbecausethetechniquecanbeused                                pliedsoastocreateorigamiforthickmaterials.                         tanϕ2         sina12 − a23
+                                                                                                                                                           2 ¼ −           2     ; ϕ ¼ ϕ andϕ ¼ϕ ð1Þ
+              to create shape-changing structures. Rigid ori-                        Rigid origami patterns, designed universally                         ϕ             a þa        1       3         2      4
+                                                                                                                                                     tan 1         sin 12      23
+              gami is a subset of origami that considers rigid                    for a zero-thickness sheet, are made from creases                        2               2
+              objects connectedbyhinges.Thistypeoforigami                         intersecting at vertices. However, these patterns                  Nowconsideritsthick-panelcounterpart(Fig.1B),
+              hasprobablythegreatestapplicationpotentialin                        cannot be directly applied to a panel of nonzero                   in which the panel is partitioned by the same set
+              engineering structures (1, 2)—ranging from solar                    thickness, given that all of the fold lines cannot be              ofsectoranglesintofoursubpanels.Placeonefold
+              panels (3), space mirrors, and aircraft wings, to                   placedonthesamefaceofthepanelbecausethe                            line on the top face of subpanels, three on bottom
+              robots (4)—because most materials used in these                     subpanels would collide during folding. For this                   faces. a , a , a ,anda            are distances between
+                                                                                                                                                               12   23   34         41
+              applications are relatively rigid. To date, all ki-                 reason,somefoldlinesmustbeplacedonthetop                           adjacent fold lines, respectively, which effectively
+              nematicmodelingofrigidorigamitreatsthepaper                         face whereas others must be placed on the bot-                     represent the thicknesses of the subpanels.                               www.sciencemag.orgwww.sciencemag.orgwww.sciencemag.orgwww.sciencemag.orgwww.sciencemag.org
+              as having zero thickness. At each vertex where                      tom face of a panel, forming an assembly in                           Kinematically, this assembly is no longer a
+              creases, or fold lines, meet, the origami is consid-                which the fold lines are neither concurrent nor                    sphericallinkage.Itmustbeaspatial4Rlinkage
+              ered as a spherical linkage, where creases act as                   intersectingatavertex.Asaresult,thekinematic                       if it is capable of motion. The only spatial 4R link-
+              revolute joints (R) and the paper bounded by the                    model of the spherical linkage around each ver-                    age is the Bennett linkage, a century-old mecha-
+              creases act as links. A rigid origami pattern is                    tex used for a zero-thickness sheet has now been                   nism in which the axes of revolute joints neither
+              therefore a combinationofmanysuchlinkages.                          replaced by a loop of rigid bodies (panels) con-                   meet nor are parallel (12). The existence of mo-
+              For panels of nonzero thickness, various tech-                      nected by a set of revolute joints (fold lines) that               bility is due to the special geometry conditions
+              niques have been suggested to use the same                          are placed a distance apart because of the thick-                  (13), which are                                                           Downloaded from Downloaded from Downloaded from Downloaded from Downloaded from 
+              kinematic model, which include adding tapered                       ness. Its foldability depends on two conditions:                                  a þa ¼a þa ¼p                               ð2Þ
+              materials to the plane of zero-thickness (5)or                      (i) Each loop of connected rigid bodies must be a                                   12     34      23      41
+              offsetting panels away from the planes defined                      mechanicallinkage, and (ii) the assembly of these                                     a ¼a ;a ¼a                              ð3Þ
+              bytheadjacentcreases (6). The tapered material                      linkages retains mobility so that it can be folded.                                     12     34    23      41
+              technique has been used to fold a thick panel                          Most practically used patterns—such as the                      and
+              based on the Miura-ori, whereas the offset one                      Miura-ori,square-twist,diamond,andwaterbomb                                                a       sina
+              hasbeenusedforfoldingasquare-twistorigami                           patterns—have four, five, or six creases inter-                                             12 ¼        12                    ð4Þ
+                                                                                                                                                                            a        sina
+              pattern. However,thesemethodsoftenresultin                          secting at a vertex, and thus, the corresponding                                            23          23
+              surfaces that are either not entirely flat or with                  closed kinematic chains for thick panels, when
+              voids to allow folding. Two exceptions to this                      foldable, are spatial 4R,5R,and6R linkages.                        Equation 2 matches the flat foldable condition
+              are the technique introduced by Hoberman to                         These linkages belong to a specific family of spa-                 forazero-thicknesssheet,whereasEqs.3and4
+              fold the symmetric Miura-ori (7), and the tech-                     tial linkages often referred to as the overcon-                    are conditions governing the placement of fold
+              nique by De Temmerman for the diamond ori-                          strained linkages because the Kutzbach criterion                   lines. The Bennett linkage has a single degree
+              gamipattern(8).Notallofthefoldlinesmeetat                           yields a mobility value of less than one (9). The                  of freedom. Wecanprovethattherelationships
+              apointineitherofthesemethods,andthus,the                            existenceofmobilityisduetospecificgeometries                       amongthedihedralanglesareidenticaltothose
+              verticesnolongerexist.Thisindicatesthattheir                        that the linkages possess. In this work, we first                  inEq.1,exceptthatϕ,ϕ ,ϕ ,andϕ arereplaced
+                                                                                                                                                                                1   2    3         4
+              folding cannot be simply treated as the motion                      found the kinematically equivalent spatial link-                         Be     Be    Be         Be
+                                                                                                                                                     by ϕ ,ϕ ,ϕ ,andϕ ,respectively. Its motion
+                                                                                                                                                           1      2     3          4
+                                                                                  ages to the single-vertex origami patterns made                    is therefore identical to that of the spherical
+                                                                                  from four, five, and six creases, respectively, and                4Rlinkage throughout the entire folding pro-
+              1School of Mechanical Engineering, Tianjin University, 92           thenextendedthistomultiplevertexpatternsby                         cess (fig. S4). The spherical 4R linkage and this
+              Weijin Road, Nankai District, Tianjin 300072, China.                ensuring that the motion of the assembly of                        Bennettlinkage are kinematicallyequivalentas
+              2Department of Engineering Science, University of Oxford,
+              Parks Road, Oxford OX1 3PJ, UK.                                     theselinkagesmatchesthatofthezero-thickness                        a result. The folding process of a zero-thickness
+              *Corresponding author. E-mail: zhong.you@eng.ox.ac.uk               pattern. Using this approach, origami patterns                     rigid origami and its thick-panel counterpart is
+              396 24JULY2015•VOL349ISSUE6246                                                                                                                                       sciencemag.org SCIENCE
+                                                                                                                                                      RESEARCH | REPORTS
+                                                                                                                                anditsthickcounterpartbyusingthesquare-twist
+                                                                                                                                patternareshowninFig.1D,fig.S4,andmovieS1.
+                                                                                                                                   Similarly, we can also create a folding scheme
+                                                                                                                                of a thick panel using the Miura-ori, as done by
+                                                                                                                                Hoberman(7).However,Hobermanonlyreported
+                                                                                                                                the symmetrical case in which a      =a anda =
+                                                                                                                                                                   12    23      34
+                                                                                                                                a , which is a special case of Eq. 2.
+                                                                                                                                  41
+                                                                                                                                   The Bennett linkage requires sector angles to
+                                                                                                                                satisfy Eq. 2 that equates to the condition for flat
+                                                                                                                                foldability. Because the Bennett linkage is the only
+                                                                                                                                knownspatial4Rlinkage,itcanbeconcludedthat
+                                                                                                                                for the four-crease rigid origami, only flat foldable
+                                                                                                                                patterns can have thick-panel equivalents.
+                                                                                                                                   Themethodfordevisingfoldingoffour-crease
+                                                                                                                                patternscanbeextendedtothesingle-vertexfive-
+                                                                                                                                crease rigid origami case. Many single-vertex five-
+                                                                                                                                crease origami patterns for a zero-thickness sheet
+                                                                                                                                exist,andhere,weconsideraparticularonethat
+                                                                                                                                has been used to make boxes (Fig. 2A). In this
+                                                                                                                                pattern, the creases divide the sheet into five
+                                                                                                                                pieces, with sector angles asinwhicha          = a ,
+                                                                                                                                                                             51    12
+                                                                                                                                a ¼a ¼p,anda =p–2a .Itcanbemodeled
+                                                                                                                                  23     45   2       34         12
+                                                                                                                                as a spherical 5R linkage. In general, this linkage
+                                                                                                                                has two degrees of freedom, but we restrict its
+                                                                                                                                motion by preserving symmetry—that is, during
+                                                                                                                                folding, by letting the dihedral angles satisfy
+                                                                                                                                              ϕ ¼ϕ and ϕ ¼ϕ                       ð5Þ
+                                                                                                                                                5      2        4      3
+                                                                                                                                   We then consider its nonzero thickness
+                                                                                                                                counterpart (Fig. 2B), in which the thick panel
+                                                                                                                                is apportioned by exactly the same set of sector
+                                                                                                                                angles. The fold lines are then placed either on
+                                                                                                                                top or bottom of the panel surfaces, and the
+                                                                                                                                distances between a pair of neighboring fold
+                                                                                                                                lines are as. It has become a spatial 5R linkage.
+                                                                                                                                   There are a number of 5R overconstrained
+                                                                                                                                linkages. The arrangement of the sector angles
+                                                                                                                                makesitpossibletobeaMyardlinkage(14)be-
+                                                                                                                                cause it has the same angle conditions as those
+                                                                                                                                forthisparticularlinkage.Inaddition,theMyard
+                                                                                                                                linkage requires
+                                                                                                                                         a ¼a ;a ¼a anda ¼0                       ð6Þ
+                                                                                                                                          12     51  23     45;       34
+                                                                                                                                and
+                                                                                                                                                    a      sina
+                                                                                                                                                      12 ¼      12                ð7Þ
+                                                                                                                                                    a      sina
+                                                                                                                                                     23         23
+                                                                                                                                   Thethick-panelassemblywillhaveonedegree
+            Fig. 1. Four-crease single- and multiple-vertexorigami. (A) A partially folded single-vertex four-crease            of freedom if the arrangement of fold lines
+            rigid origami for a zero-thickness sheet. Blue solid and red dash lines represent mountain and valley               satisfies Eqs. 6 and 7 because it is now a Myard
+            creases,respectively. asandϕs are sector and dihedral angles, respectively. (B) The thick-panel counter-            linkage. Furthermore, the proof in the supple-
+            partwiththesectoranglesidenticaltothosein(A),butthefoldlinesnolongermeetatapoint(vertex).as                         mentary text shows that the motion of this link-
+                                                                Be                                                              ageisidenticaltothatofthespherical5Rlinkage
+            are distances between adjacent fold lines, and ϕ s are dihedral angles. (C) Folding sequence of a model
+            madeofzero-thicknesssheetanditsthick-panel counterpart.The sectorangles for both models are p/6,                    whenEq. 5 is imposed. This folding scheme has
+            p/2, 5p/6, and p/2. (D) Folding sequence of a zero-thickness square-twist origami and its thick-panel               been used to fold a box (Fig. 2C and movie S1).
+            counterpart based on the Bennett linkage. The pattern consists of four identical four-crease vertices                  TheMyardlinkagehasonlyonedegreeoffree-
+            arranged in rotational symmetry.The sector angles for each vertex are the same as those for the single-             dom, whereas a spherical 5R linkage commonly
+            vertex model in (C).                                                                                                hastwo.Itispossibletofindakinematicmatch
+                                                                                                                                only if one of the degrees of freedom of the latter
+                                                                                                                                is frozen, which is achieved in the above example
+            demonstrated in Fig. 1C and movie S1. Both                vertex of the pattern, preserving the sector angle of     byimposingsymmetry.Thesamestrategyisused
+            havefour fold lines, with the same sector angles.         each subpanel. We then merge the fold lines that          for the six-crease example discussed next.
+               The four-crease thick-panel origami can be             are shared by two adjacent Bennett linkages. This            One of the typical six-crease origami patterns
+            readily applied to find the thick-panel equiva-           is possible because there is rotational symmetry in       is the diamond pattern. The zero-thickness pat-
+            lenceofmultiple-vertexrigidorigami.Forexample,            the square-twist pattern, leading to the exact same       tern (Fig. 3A) has sector angles a  =a =a =a
+                                                                                                                                                                  12    34    45    61
+            the square-twist pattern with rotational symmetry:        amount of rotation for the combined fold lines.           anda =a =p–2a .Thissphericallinkagehas
+                                                                                                                                      23    56         12
+            First, the Bennett linkage can be applied to each         Thefolding process of a zero-thickness rigid panel        three degrees of freedom in general. However, if
+            SCIENCE sciencemag.org                                                                                                        24 JULY 2015 • VOL 349 ISSUE 6246      397
+       RESEARCH | REPORTS
+       Fig. 2. Five-crease single- and multiple-vertex origami.
+       (A) A single-vertex five-crease rigid origami pattern for a
+       zero-thickness sheet. (B) The thick-panel counterpart
+       with sector angles identical to those in (A), but the fold
+       lines no longer meet at a point (vertex). (C) Folding se-
+       quence of a zero-thickness rigid origami with five-crease
+       vertices and its thick-panel counterpart based on the
+       Myard linkage.The pattern has six five-crease vertices
+       arranged in rotational symmetry.The sector angles at
+       each vertex are p/6, p/2, 2p/3, p/2, and p/6.
+       Fig. 3.Thediamondorigamipattern.(A)Asingle-vertex
+       six-crease diamond pattern for a zero-thickness sheet. (B)
+       The thick-panel counterpart with sector angles identical
+       to those in (A), but the fold lines no longer meet at a
+       point (vertex). (C) Folding sequence of a zero-thickness
+       origami model of the diamond pattern and its thick-
+       panel counterpart based on the plane-symmetric Bricard
+       linkage. All the vertices are identical. The sector angles
+       around each vertex are p/6, 2p/3, p/6, p/6, 2p/3, and p/6.
+       398 24JULY2015•VOL349ISSUE6246                                                  sciencemag.org SCIENCE
+                                                                                                                                     RESEARCH | REPORTS
+           Fig. 4. Origami using the waterbomb pattern
+           for zero- and nonzero-thickness panels and
+           thick-panel origami of a pattern with a mixture
+           of vertices with four and six creases. (A)The
+           traditional waterbomb pattern for zero-thickness
+           sheet.TwotypesofverticesaremarkedasDand
+           W.(B) Origami pattern around vertex W.(C)Its
+           thick-panelcounterpart.(D)Foldingsequenceof
+           thethick-panelwaterbombpattern.Aroundtype
+           Dvertex,thesectoranglesarep/4, p/2,p/4, p/4,
+           p/2,andp/4,whereastheyarep/2,p/4, p/4, p/4,
+           p/4, and p/2 around type W vertex. (E) Folding
+           sequence of a thick-panel origami derived from
+           anorigamipatternwithamixtureofbothfour-and
+           six-crease vertices. It contains both the Bennett
+           andBricard linkages.
+           we confine its motions to the symmetric case by    diamondpattern.Thefoldingsequencesofboth            linkageiskinematicallyequivalenttothatofthe
+           letting                                            zero- and nonzero-thickness models are shown        spherical linkage at W,asshowninFig.4C.
+                  ϕ ¼ϕ and ϕ ¼ϕ ¼ϕ ¼ϕ                  ð8Þ    in Fig. 3C and movie S1. This agrees with results     Considering the common folds appearing in
+                   1     4       2     3     5     6          reported by De Temmerman(8),butacomplete            both Bricard linkages as we did with the square-
+           it reduces to a linkage with a single degree of    mathematic proof is presented here.                 twistpatterndescribedpreviously,thewaterbomb
+           freedom.                                              Another typical six-crease origami pattern is    pattern for the thick panel can be obtained. The
+             Thecorresponding thick-panel pattern is given    the traditional waterbomb pattern (16), whose       folding sequence of nonzero thickness model is
+           in Fig. 3B, in which all sector angles are iden-   zero-thickness origami pattern is shown in          showninFig.4DandmovieS1.
+           tical to those of the zero-thickness pattern. The  Fig. 4A. Unlike the diamond pattern, there are        If m ≠ 1, the motion of the corresponding
+           distances between axes of fold lines are marked    two types of vertices, marked as D and W. D         Bricard linkage differs from that of the spherical
+           in the diagram.                                    is a special case of the diamond pattern for        linkage at W,althoughbothareflatfoldableand
+             The 6R assembly of Fig. 3B reassembles the       which Eqs. 9 and 10 can be used to syntheses        can expand flat, which is demonstrated by the
+                                                                                                                                             Br            Br
+           plane-symmetricBricardlinkage(15)withline-         thick panel origami. W, specific to the water-      relationship between ϕ (ϕ )andϕ (ϕ )in
+                                                                                                                                         1   1         2   2
+           and plane-symmetric behavior. The geometri-        bombpattern, is enlarged in Fig. 4B, in which       fig. S14. This indicates that the thick-panel ori-
+           cal conditions of the Bricard linkage for the      the sector angles are                               gamicanbedevisedbythemechanismtheory
+           distances between neighboring axes of the ro-                                p                         alone without referring to its parent rigid ori-
+           tational joints are                                              a ¼a ¼ and                            gami pattern.
+                                                                              12    61  2
+                  a ¼a ;a ¼a ;anda ¼a                  ð9Þ                                        p                 Wehavedevelopedacomprehensivekinematic
+                   12    61  23    56       34    45                     a ¼a ¼a ¼a ¼                    ð11Þ     model for rigid origami of panels with nonzero
+                                                                          23    34     45    56   4
+           In addition, to achieve compact folding, there                                                         thickness. This is done by identifying a spatial
+           mustbe                                             For W, we can show that the corresponding           linkage model that is kinematically equivalent to
+                           a12 þ a23 ¼ a34;           ð10Þ    Bricardlinkageisaplane-symmetriconeinwhich          the rigid origami of a zero-thickness sheet. In
+                                                              the thicknesses of subpanels must satisfy           other words, the motion of the spatial linkage
+           which is obvious by considering the completely             a ¼a ;a ¼a ¼ma ;and                         mimics that of the spherical linkage commonly
+           packaged configuration.                                     23     56  34    45     23                 used to model rigid origami. To achieve this, we
+             ThekinematicmotionofthisBricardlinkage                        a ¼a ¼ð1þmÞa                   ð12Þ    identified a spatial linkage that has the angular
+                                                                            12    61           23
+           again matches that of the spherical 6R linkage                                                         conditionsforarrangementoffoldlinesidentical
+           ofthezero-thicknessmodel(fig.S8).Thisenables       in order to achieve compact folding. m is a con-    to that of the spherical linkage and then proved
+           us to make a thick-panel origami arch using the    stant. When m = 1, the motion of this Bricard       analytically thattheir motionsarepreciselyalike.
+           SCIENCE sciencemag.org                                                                                         24JULY2015• VOL349ISSUE6246       399
+                    RESEARCH | REPORTS
+                        The thick-panel counterparts to four-, five-,                                              STRETCHYELECTRONICS
+                    andsix-crease vertex origami patterns are over-
+                    constrainedspatiallinkages.Thenumberofsuch
+                    linkages is rather limited (17). It is relatively                                              Hierarchically buckled sheath-core
+                    straightforward for four-crease origami patterns
+                    becauseonlyonespatial4Rlinkage exists. How-                                                    fibers for superelastic electronics,
+                    ever, five- and six-crease single-vertex patterns
+                    commonly comprise two or three degrees of
+                    freedom, whereas their corresponding spatial                                                   sensors, and muscles
+                    overconstrained linkages have only one mobility
+                    degree of freedom. In these cases, equivalence                                                                    1,2,3                    1,3                               1,4                          2,10                      1,3              1                       5
+                                                                                                                   Z. F. Liu,                  S. Fang,             * F. A. Moura,                     J. N. Ding,                   N. Jiang,                J. Di, M. Zhang,
+                    can only be accomplished through reducing the                                                                     1                             4                             1                         2,3                       3,6                         3
+                    degreesoffreedomoftheformerbysymmetryor                                                        X. Lepró, D. S. Galvão, C. S. Haines, N. Y. Yuan,                                                              S. G. Yin,                D. W. Lee,
+                                                                                                                                      2,3                             3,6                 2,3                     2,3                             3,6                           2,3
+                    other means. This may be beneficial for practical                                              R. Wang,                 H.Y.Wang,                       W.Lv,               C. Dong,                R. C. Zhang,                    M.J.Chen,
+                                                                                                                                 2,3                             3                      7,8                       8                           1                                     9
+                    applications because the folding of thick panels                                               Q. Yin,              Y. T. Chong, R. Zhang,                                X. Wang, M.D.Lima, R.Ovalle-Robles,
+                                                                                                                                    8               8                                     1,3*
+                    can be more easily controlled owing to their sin-                                              D. Qian, H. Lu, R. H. Baughman
+                    gle degree of freedom. Moreover, the synthesis                                                 Superelastic conducting fibers with improved properties and functionalities are needed
+                    canalsobeusedfororigamipatternsconsisting                                                      for diverse applications. Here we report the fabrication of highly stretchable (up to 1320%)
+                    ofamixtureofverticeswithvariouscreases.The                                                     sheath-core conducting fibers created by wrapping carbon nanotube sheets oriented in
+                    folding sequenceofathick-panelorigamibased                                                     the fiber direction on stretched rubber fiber cores.The resulting structure exhibited
+                    onapatternwithbothfour- and six-crease ver-                                                    distinct short- and long-period sheath buckling that occurred reversibly out of phase
+                    tices is shown in Fig. 4E and movie S1.                                                        in the axial and belt directions, enabling a resistance change of less than 5% for a
+                                                                                                                   1000%stretch. By including other rubber and carbon nanotube sheath layers, we
+                    REFERENCESANDNOTES                                                                             demonstrated strain sensors generating an 860% capacitance change and electrically
+                    1.   Z. You, Science 345, 623–624 (2014).                                                      powered torsional muscles operating reversibly by a coupled tension-to-torsion
+                    2.   I. Hagiwara, in System Simulation and Scientific Computing,                               actuation mechanism. Using theory, we quantitatively explain the complementary effects
+                         T. Xiao, L. Zhang, S. Ma, Eds. (Springer, Berlin, 2012),
+                         pp. 259–268.                                                                              of an increase in muscle length and a large positive Poisson’s ratio on torsional actuation
+                    3.   K. Miura, “Method of packaging and deployment of large                                    and electronic properties.
+                         membrane in space,” 31st Congress of International
+                         Astronautical Federation, New York, Paper A 31 (1980),
+                         pp. 1–10.                                                                                             ighly elastic electrical conductors are                                            significantly changing conductivity could enable
+                    4.   S. Felton, M. Tolley, E. Demaine, D. Rus, R. Wood, Science 345,                                       needed for stretchable electronic circuits,                                        thedeploymentofsuperelasticfibersasartificial
+                         644–646 (2014).
+                                                   5                                                                           pacemakerleads,light-emitting displays,                                            muscles, electronic interconnects, supercapac-
+                    5.   T. Tachi, in Origami , P. Wang-Iverson, R. J. Lang, M. Yim, Eds.
+                         (AK Peters, Natick, MA, 2011), pp. 253–264.                                                           batteries, supercapacitors, and strain sen-                                        itors, or light-emitting elements.
+                    6.   B. J. Edmondson et al., “An offset panel technique for thick                              Hsors(1). For such purposes, conducting                                                            We replaced the frequently used laminate
+                         rigidily foldable origami,” presented in ASME 2014 International                          elastomers have been fabricated by incorpo-                                                    ofacarbonnanotube(CNT)sheetwrappedon
+                         Design Engineering Technical Conferences, Buffalo, NY,
+                         17 to 21 August 2014.                                                                     rating conducting particles in rubber (2–5)orby                                                a stretched rubber sheet with a multilayer CNT
+                    7.   C. S. Hoberman, U.S. Patent No. 4,780,344 (1988).                                         attaching sheets of conducting nanofibers (6–9),                                               sheath wrapped on a rubber fiber core (21, 22).
+                    8.   I. A. N. De Temmerman, M. Mollaert, T. Van Mele, L. De Laet,                              graphenesheets(10,11),orcoiledorserpentine                                                     Weenabled additional functions by including
+                         Int. J. Space Structures 22,161–168 (2007).                                               conductors to a rubber sheet or fiber (12–17). Al-                                             other rubber and CNT sheath layers. The con-
+                    9.   J. Phillips, Freedom of Machinery, vol. II (Cambridge Univ.
+                         Press, Cambridge, 1990).                                                                  thoughreversible strains exceeding 500% have                                                   ducting sheaths were derived from highly ori-
+                    10. T. Hull, Congr. Numer. 100, 215–224 (1994).                                                been demonstrated, the quality factor (Q, the                                                  ented multiwalled CNT aerogel sheets, which
+                    11. C. H. Chiang, Kinematics of Spherical Mechanisms (Krieger                                  percent strain divided by the percent resistance                                               were drawn from CNT forests (21). Three ba-
+                         Publishing, Malabar, FL, 2000).                                                           change) has been below three for such large                                                    sic configurations were deployed: NTS @fiber,
+                    12. G. T. Bennett, Engineering 76, 777–778 (1903).                                                                                                                                                                                                                   m
+                    13. J. S. Beggs, Advanced Mechanism (Macmillan Company,                                        strains (17–20).Elastomericconductorswithvery                                                  rubber@NTS @fiber, and NTS @rubber@
+                                                                                                                                                                                                                                           m                                     n
+                         New York, 1966).                                                                          low quality factors are useful as strain sensors,                                              NTS @fiber.NTS @fiberdenotesm carbon
+                                                                                                                                                                                                                          m                          m
+                    14. F. E. Myard, Soc. Math. France 59, 183–210 (1931).                                         but the other applications noted above would                                                   nanotubesheet(NTS)layersdepositedontop
+                    15. R. Bricard, Leçons de cinématique, Tome II Cinématique                                     benefit from the realization of very high qual-                                                of a rubber fiber core, rubber@NTS @fiber
+                         Appliquée (Gauthier-Villars, Paris, 1927), pp. 7–12.                                                                                                                                                                                                            m
+                    16. S. Randlett, The Art of Origami: Paper Folding, Traditional and                            ity factors. The availability of conducting fibers                                             is a rubber-coated NTSm@fiber, and NTSn@
+                         Modern (Faber and Faber, London, 1963)                                                    that can be stretched to great extents without                                                 rubber@NTS @fiber indicates an NTS sheath
+                                                                                                                                                                                                                                          m                                              n
+                    17. Z. You, Y. Chen, Motion Structures (Spon Press, Oxford, UK,                                                                                                                               (where n is the number of NTS layers) on a
+                         2012).                                                                                                                                                                                   rubber@NTS @fiber core.
+                                                                                                                   1Alan G. MacDiarmid NanoTech Institute, University of Texas                                                             m
+                    ACKNOWLEDGMENTS                                                                                                                                       2                                           The rubber fiber core was highly stretched
+                                                                                                                   at Dallas, Richardson, TX 75080, USA. Jiangsu Collaborative                                    (typically to 1400% strain) during the wrapping
+                    This research was funded by the Royal Academy of Engineering                                   Innovation Center of Photovoltaic Science and Engineering,
+                    (1314RECI061). Y.C. acknowledges the support of the National                                   Changzhou University, Changzhou 213164, China. 3Jiangnan                                       of NTS layers, and the CNT orientation was pa-
+                    Natural Science Foundation of China (Projects 51290293 and                                     Graphene Research Institute, Changzhou 213149, China.                                          rallel to the rubber fiber direction (Fig. 1A). For
+                    51422506), and Z.Y. acknowledges the support of the Air Force                                  4Applied Physics Department, State University of Campinas,
+                                                                                                                                                                  5                                               the preparation of rubber@NTS @fibers, the
+                    Office of Scientific Research (R&D Project 134028). The authors                                Campinas, SP 13081-970, Brazil. High-Performance                                                                                                            m
+                    also thank H. Feng for verifying one of the diagrams.                                          Materials Institute, Florida State University, Tallahassee, FL                                 outermost rubber coating was applied while
+                                                                                                                                     6                                                                            the rubber core was fully stretched, whereas
+                                                                                                                   32310, USA. Institute of Materials Physics, Tianjin University
+                                                                                                                   of Technology, Tianjin 300384, China. 7School of                                               for the preparation of NTS @rubber@NTS @
+                                                                                                                   Astronautics, Northwestern Polytechnical University, Xi’an                                                                                        n                            m
+                    SUPPLEMENTARYMATERIALS                                                                                               8                                                                        fibers,thethickerrubberlayerusedasadielectric
+                    www.sciencemag.org/content/349/6246/396/suppl/DC1                                              710072, China. Department of Mechanical Engineering,                                           was deposited on an NTS @fiber that was not
+                    Materials and Methods                                                                          University of Texas at Dallas, Richardson, TX 75080, USA.                                                                                     m
+                                                                                                                   9Lintec of America, Nano-Science and Technology Center,                                        stretched (22). The parallel orientations of CNT
+                    Supplementary Text                                                                             Richardson, TX 75081, USA. 10Micro/Nano Science and                                            fibers and the rubber core, the substantial strain
+                    Figs. S1 to S14                                                                                Technology Center, Jiangsu University, Zhenjiang 212013,
+                    Movie S1                                                                                       China.                                                                                         appliedduringsheathwrapping,andtheuseof
+                    6 April 2015; accepted 26 June 2015                                                            *Corresponding author. E-mail: sfang@utdallas.edu (S.F.);                                      a large m resulted in the observed hierarchical
+                    10.1126/science.aab2870                                                                        ray.baughman@utdallas.edu (R.H.B.)                                                             two-dimensional buckling and corresponding
+                    400 24JULY2015•VOL349ISSUE6246                                                                                                                                                                                                         sciencemag.org SCIENCE
+                                       Origami of thick panels
+                                       Yan Chen et al.
+                                       Science 349, 396 (2015);
+                                       DOI: 10.1126/science.aab2870
+                                       This copy is for your personal, non-commercial use only. 
+                      If you wish to distribute this article to others, you can order high-quality copies for your
+                      colleagues, clients, or customers by  clicking here. 
+                      Permission to republish or repurpose articles or portions of articles can be obtained by
+                      following the guidelines  here. 
+                       
+                      The following resources related to this article are available online at
+                      www.sciencemag.org (this information is current as of July 23, 2015 ): 
+                       
+                      Updated information and services, including high-resolution figures, can be found in the online
+                      version of this article at: 
+                      http://www.sciencemag.org/content/349/6246/396.full.html 
+                      Supporting Online Material can be found at: 
+                      http://www.sciencemag.org/content/suppl/2015/07/22/349.6246.396.DC1.html                                on July 23, 2015
+                      This article cites 6 articles, 2 of which can be accessed free:
+                      http://www.sciencemag.org/content/349/6246/396.full.html#ref-list-1 
+                      This article appears in the following subject collections:
+                      Materials Science
+                      http://www.sciencemag.org/cgi/collection/mat_sci 
+                                                                                                                             www.sciencemag.org
+                                                                                                                             Downloaded from 
+         Science (print ISSN 0036-8075; online ISSN 1095-9203) is published weekly, except the last week in December, by the
+         American Association for the Advancement of Science, 1200 New York Avenue NW, Washington, DC 20005. Copyright
+         2015 by the American Association for the Advancement of Science; all rights reserved. The title  Science is a
+         registered trademark of AAAS. 

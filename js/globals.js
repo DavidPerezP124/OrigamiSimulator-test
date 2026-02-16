@@ -44,6 +44,9 @@ function initGlobals(){
 
         //3d vis
         simType: "dynamic",
+        panelThickness: 0.02,
+        thickLinkageType: "bennett",
+        minHingeGap: 0.0,
 
         //compliant sim settings
         creasePercent: 0.6,
