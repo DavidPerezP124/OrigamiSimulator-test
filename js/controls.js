@@ -441,14 +441,43 @@ function initControls(globals){
         else $("#thickPanelSettings").hide();
     }
 
+    function updateThinAreaStats(stats, isThinMode){
+        if (!isThinMode || !stats || !stats.valid){
+            $("#thinAreaCurrent").html("--");
+            $("#thinAreaReference").html("--");
+            $("#thinAreaDelta").html("--");
+            $("#thinAreaDeltaPercent").html("--");
+            return;
+        }
+        var deltaSign = stats.delta >= 0 ? "+" : "";
+        var percentSign = stats.deltaPercent >= 0 ? "+" : "";
+        $("#thinAreaCurrent").html(stats.current.toFixed(6));
+        $("#thinAreaReference").html(stats.reference.toFixed(6));
+        $("#thinAreaDelta").html(deltaSign + stats.delta.toFixed(6));
+        $("#thinAreaDeltaPercent").html(percentSign + stats.deltaPercent.toFixed(2) + "%");
+    }
+
     setRadio("simType", globals.simType, function(val){
+        var prevSimType = globals.simType;
         globals.simType = val;
-        globals.simNeedsSync = true;
+        var usesDynamicSolverBefore = (prevSimType == "dynamic" || prevSimType == "thick");
+        var usesDynamicSolverAfter = (globals.simType == "dynamic" || globals.simType == "thick");
+        globals.simNeedsSync = !(usesDynamicSolverBefore && usesDynamicSolverAfter);
         if (globals.model) globals.model.updateMeshVisibility();
         updateThickPanelUI();
-        if (globals.simType == "thick" && globals.model) globals.model.updateThickPanelGeometry();
+        if (globals.model){
+            if (globals.simType == "thick"){
+                globals.model.updateThickPanelGeometry();
+            } else if (globals.model.resetThinAreaReference) {
+                globals.model.resetThinAreaReference();
+            }
+            if (globals.model.getThinAreaStats){
+                updateThinAreaStats(globals.model.getThinAreaStats(), globals.simType != "thick");
+            }
+        }
     });
     updateThickPanelUI();
+    updateThinAreaStats(null, globals.simType != "thick");
 
     setSliderInput("#axialStiffness", globals.axialStiffness, 10, 100, 1, function(val){
         globals.axialStiffness = val;
@@ -962,6 +991,7 @@ function initControls(globals){
     return {
         setDeltaT: setDeltaT,
         updateCreasePercent: updateCreasePercent,
-        setSliderInputVal: setSliderInputVal
+        setSliderInputVal: setSliderInputVal,
+        updateThinAreaStats: updateThinAreaStats
     }
 }

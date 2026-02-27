@@ -68,6 +68,17 @@ function initModel(globals){
             // lineGeometry.verticesNeedUpdate = true;
             lineGeometry.dynamic = true;
         });
+
+        thickPositions = null;
+        thickIndices = null;
+        thinAreaReference = null;
+        if (thinAreaStats){
+            thinAreaStats.valid = false;
+            thinAreaStats.current = 0;
+            thinAreaStats.reference = 0;
+            thinAreaStats.delta = 0;
+            thinAreaStats.deltaPercent = 0;
+        }
     }
 
     globals.threeView.sceneAddModel(frontside);
@@ -82,6 +93,14 @@ function initModel(globals){
     var indices;
     var thickPositions;
     var thickIndices;
+    var thinAreaReference = null;
+    var thinAreaStats = {
+        valid: false,
+        current: 0,
+        reference: 0,
+        delta: 0,
+        deltaPercent: 0
+    };
     var nodes = [];
     var faces = [];
     var edges = [];
@@ -108,7 +127,8 @@ function initModel(globals){
             });
             backside.visible = false;
             thickMaterial = new THREE.MeshNormalMaterial({
-                flatShading:true,
+                // Smooth shading prevents triangulation facets from reading as creases.
+                flatShading:false,
                 side: THREE.DoubleSide
             });
         } else if (globals.colorMode == "axialStrain"){
@@ -120,7 +140,8 @@ function initModel(globals){
             });
             backside.visible = false;
             thickMaterial = new THREE.MeshPhongMaterial({
-                flatShading:true,
+                // Smooth shading prevents triangulation facets from reading as creases.
+                flatShading:false,
                 side: THREE.DoubleSide
             });
             thickMaterial.color.setStyle("#" + globals.color1);
@@ -147,7 +168,8 @@ function initModel(globals){
             material2.color.setStyle( "#" + globals.color2);
             backside.visible = true;
             thickMaterial = new THREE.MeshPhongMaterial({
-                flatShading:true,
+                // Smooth shading prevents triangulation facets from reading as creases.
+                flatShading:false,
                 side: THREE.DoubleSide
             });
             thickMaterial.color.setStyle("#" + globals.color1);
@@ -158,9 +180,10 @@ function initModel(globals){
     }
 
     function updateEdgeVisibility(){
+        var isThick = globals.simType == "thick";
         mountainLines.visible = globals.edgesVisible && globals.mtnsVisible;
         valleyLines.visible = globals.edgesVisible && globals.valleysVisible;
-        facetLines.visible = globals.edgesVisible && globals.panelsVisible;
+        facetLines.visible = globals.edgesVisible && globals.panelsVisible && !isThick;
         hingeLines.visible = globals.edgesVisible && globals.passiveEdgesVisible;
         borderLines.visible = globals.edgesVisible && globals.boundaryEdgesVisible;
         cutLines.visible = false;
@@ -171,6 +194,7 @@ function initModel(globals){
         frontside.visible = globals.meshVisible && !useThick;
         backside.visible = globals.colorMode == "color" && globals.meshVisible && !useThick;
         thickMesh.visible = globals.meshVisible && useThick;
+        updateEdgeVisibility();
     }
 
     function edgeKeyForPair(a, b){
@@ -253,8 +277,13 @@ function initModel(globals){
             var key = keys[k];
             var entries = edgeFaces[key];
             var isBoundary = entries.length < 2;
-            var isPattern = edgeIsPatternByKey[key] !== false;
-            var addSide = isBoundary || isPattern;
+            var hasAssignment = edgeAssignmentByKey.hasOwnProperty(key);
+            var assignment = hasAssignment ? edgeAssignmentByKey[key] : "F";
+            // Some imported FOLD files omit interior triangulation edges from edges_vertices.
+            // Treat unknown shared edges as facet splits so thick mode stays watertight.
+            var isFacet = assignment == "F" || !hasAssignment;
+            var isPattern = hasAssignment && edgeIsPatternByKey[key] !== false;
+            var addSide = isBoundary || (isPattern && !isFacet);
             if (!addSide){
                 for (var j=0;j<entries.length;j++){
                     var entry = entries[j];
@@ -262,7 +291,7 @@ function initModel(globals){
                 }
             }
 
-            if (!isPattern && !isBoundary && entries.length > 1){
+            if (!addSide && !isBoundary && entries.length > 1){
                 var parts = key.split("_");
                 var a = parseInt(parts[0]);
                 var b = parseInt(parts[1]);
@@ -328,6 +357,106 @@ function initModel(globals){
             }
         }
         thickGeometry.attributes.normal.needsUpdate = true;
+    }
+
+    function applySmoothPositions(positionArray, smoothGroups){
+        if (!smoothGroups || smoothGroups.length === 0) return;
+        for (var i=0;i<smoothGroups.length;i++){
+            var group = smoothGroups[i];
+            if (!group || group.length < 2) continue;
+            var x = 0, y = 0, z = 0;
+            for (var j=0;j<group.length;j++){
+                var idx = group[j] * 3;
+                x += positionArray[idx];
+                y += positionArray[idx+1];
+                z += positionArray[idx+2];
+            }
+            x /= group.length;
+            y /= group.length;
+            z /= group.length;
+            for (var j=0;j<group.length;j++){
+                var idx = group[j] * 3;
+                positionArray[idx] = x;
+                positionArray[idx+1] = y;
+                positionArray[idx+2] = z;
+            }
+        }
+    }
+
+    function cloneThinAreaStats(){
+        return {
+            valid: thinAreaStats.valid,
+            current: thinAreaStats.current,
+            reference: thinAreaStats.reference,
+            delta: thinAreaStats.delta,
+            deltaPercent: thinAreaStats.deltaPercent
+        };
+    }
+
+    function notifyThinAreaStats(){
+        if (globals.controls && globals.controls.updateThinAreaStats){
+            globals.controls.updateThinAreaStats(cloneThinAreaStats(), globals.simType != "thick");
+        }
+    }
+
+    function computeCurrentSheetArea(){
+        if (!positions || !faces || faces.length === 0) return null;
+        var area = 0;
+        for (var i=0;i<faces.length;i++){
+            var face = faces[i];
+            var ia = face[0] * 3;
+            var ib = face[1] * 3;
+            var ic = face[2] * 3;
+            var ax = positions[ia];
+            var ay = positions[ia+1];
+            var az = positions[ia+2];
+            var bx = positions[ib];
+            var by = positions[ib+1];
+            var bz = positions[ib+2];
+            var cx = positions[ic];
+            var cy = positions[ic+1];
+            var cz = positions[ic+2];
+            var abx = bx - ax;
+            var aby = by - ay;
+            var abz = bz - az;
+            var acx = cx - ax;
+            var acy = cy - ay;
+            var acz = cz - az;
+            var crossX = aby*acz - abz*acy;
+            var crossY = abz*acx - abx*acz;
+            var crossZ = abx*acy - aby*acx;
+            area += 0.5 * Math.sqrt(crossX*crossX + crossY*crossY + crossZ*crossZ);
+        }
+        return area;
+    }
+
+    function updateThinAreaStats(lockReference){
+        var area = computeCurrentSheetArea();
+        if (area === null || !isFinite(area)){
+            thinAreaStats.valid = false;
+            notifyThinAreaStats();
+            return null;
+        }
+
+        if (lockReference || !isFinite(thinAreaReference) || thinAreaReference === null || thinAreaReference <= 1e-12){
+            thinAreaReference = area;
+        }
+
+        thinAreaStats.valid = true;
+        thinAreaStats.current = area;
+        thinAreaStats.reference = thinAreaReference;
+        thinAreaStats.delta = area - thinAreaReference;
+        if (thinAreaReference > 1e-12){
+            thinAreaStats.deltaPercent = 100 * thinAreaStats.delta / thinAreaReference;
+        } else {
+            thinAreaStats.deltaPercent = 0;
+        }
+        notifyThinAreaStats();
+        return area;
+    }
+
+    function resetThinAreaReference(){
+        updateThinAreaStats(true);
     }
 
     function buildThickGeometry(){
@@ -496,14 +625,14 @@ function initModel(globals){
                 ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
                 : [p0, p1, p2];
 
-            // Bottom face sits on the original sheet; thickness extrudes along the face normal.
-            var offset = normal.clone().multiplyScalar(thickness);
-            var f0 = topVerts[0].clone().add(offset);
-            var f1 = topVerts[1].clone().add(offset);
-            var f2 = topVerts[2].clone().add(offset);
-            var b0 = botVerts[0].clone();
-            var b1 = botVerts[1].clone();
-            var b2 = botVerts[2].clone();
+            // Keep the thick mesh centered on the solved sheet to avoid visual drift.
+            var halfOffset = normal.clone().multiplyScalar(0.5 * thickness);
+            var f0 = topVerts[0].clone().add(halfOffset);
+            var f1 = topVerts[1].clone().add(halfOffset);
+            var f2 = topVerts[2].clone().add(halfOffset);
+            var b0 = botVerts[0].clone().sub(halfOffset);
+            var b1 = botVerts[1].clone().sub(halfOffset);
+            var b2 = botVerts[2].clone().sub(halfOffset);
 
             var base = i * 6 * 3;
             thickPositions[base] = f0.x;
@@ -526,6 +655,7 @@ function initModel(globals){
             thickPositions[base+17] = b2.z;
         }
 
+        applySmoothPositions(thickPositions, thickSmoothGroups);
         thickGeometry.attributes.position.needsUpdate = true;
         thickGeometry.computeVertexNormals();
         applySmoothNormals();
@@ -564,6 +694,7 @@ function initModel(globals){
 
         var edgeMeta = buildThickEdgeMeta();
         var sideMask = edgeMeta.sideMask;
+        var smoothGroups = edgeMeta.smoothGroups;
 
         var indicesArray = [];
         for (var i=0;i<faceCount;i++){
@@ -626,13 +757,13 @@ function initModel(globals){
                 ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
                 : [p0, p1, p2];
 
-            var offset = normal.clone().multiplyScalar(thickness);
-            var f0 = topVerts[0].clone().add(offset);
-            var f1 = topVerts[1].clone().add(offset);
-            var f2 = topVerts[2].clone().add(offset);
-            var b0 = botVerts[0].clone();
-            var b1 = botVerts[1].clone();
-            var b2 = botVerts[2].clone();
+            var halfOffset = normal.clone().multiplyScalar(0.5 * thickness);
+            var f0 = topVerts[0].clone().add(halfOffset);
+            var f1 = topVerts[1].clone().add(halfOffset);
+            var f2 = topVerts[2].clone().add(halfOffset);
+            var b0 = botVerts[0].clone().sub(halfOffset);
+            var b1 = botVerts[1].clone().sub(halfOffset);
+            var b2 = botVerts[2].clone().sub(halfOffset);
 
             var base = i * 6 * 3;
             positionsOut[base] = f0.x;
@@ -655,6 +786,7 @@ function initModel(globals){
             positionsOut[base+17] = b2.z;
         }
 
+        applySmoothPositions(positionsOut, smoothGroups);
         var geo = new THREE.BufferGeometry();
         geo.addAttribute('position', new THREE.BufferAttribute(positionsOut, 3));
         geo.setIndex(new THREE.BufferAttribute(indicesOut, 1));
@@ -673,16 +805,17 @@ function initModel(globals){
             var b = edge.nodes[1].getIndex();
             var key = (a < b) ? (a + "_" + b) : (b + "_" + a);
             var assignment = edgeAssignmentByKey[key];
+            if (edgeIsPatternByKey[key] === false) continue;
             if (assignment != "M" && assignment != "V") continue;
             vertexCreases[a].push({edgeIndex:i, other:b});
             vertexCreases[b].push({edgeIndex:i, other:a});
         }
 
         function getAngleForEdge(centerIndex, otherIndex){
-            var ix = centerIndex * 3;
-            var ox = otherIndex * 3;
-            var dx = positions[ox] - positions[ix];
-            var dz = positions[ox+2] - positions[ix+2];
+            var center = nodes[centerIndex].getOriginalPosition();
+            var other = nodes[otherIndex].getOriginalPosition();
+            var dx = other.x - center.x;
+            var dz = other.z - center.z;
             return Math.atan2(dz, dx);
         }
 
@@ -731,6 +864,7 @@ function initModel(globals){
             var b = edge.nodes[1].getIndex();
             var key = (a < b) ? (a + "_" + b) : (b + "_" + a);
             var assignment = edgeAssignmentByKey[key];
+            if (edgeIsPatternByKey[key] === false) continue;
             if (assignment != "M" && assignment != "V") continue;
             var aInset = edgeInsetAtVertex[a + "|" + key] || 0;
             var bInset = edgeInsetAtVertex[b + "|" + key] || 0;
@@ -766,6 +900,7 @@ function initModel(globals){
     function reset(){
         getSolver().reset();
         setGeoUpdates();
+        if (globals.simType != "thick") resetThinAreaReference();
     }
 
     function step(numSteps){
@@ -778,6 +913,7 @@ function initModel(globals){
         if (globals.colorMode == "axialStrain") geometry.attributes.color.needsUpdate = true;
         if (globals.userInteractionEnabled || globals.vrEnabled) geometry.computeBoundingBox();
         if (globals.simType == "thick") updateThickPanelGeometry();
+        else updateThinAreaStats(false);
     }
 
     function startSolver(){
@@ -823,7 +959,6 @@ function initModel(globals){
 
 
     function sync(){
-
         for (var i=0;i<nodes.length;i++){
             nodes[i].destroy();
         }
@@ -841,6 +976,12 @@ function initModel(globals){
         edges = [];
         faces = fold.faces_vertices;
         creases = [];
+        thinAreaReference = null;
+        thinAreaStats.valid = false;
+        thinAreaStats.current = 0;
+        thinAreaStats.reference = 0;
+        thinAreaStats.delta = 0;
+        thinAreaStats.deltaPercent = 0;
         creaseParams = nextCreaseParams;
         var _edges = fold.edges_vertices;
         edgeAssignmentByKey = {};
@@ -876,7 +1017,7 @@ function initModel(globals){
             var _creaseParams = creaseParams[i];//face1Ind, vert1Ind, face2Ind, ver2Ind, edgeInd, angle
             var type = _creaseParams[5]!=0 ? 1:0;
             //edge, face1Index, face2Index, targetTheta, type, node1, node2, index
-            creases.push(new Crease(
+            var crease = new Crease(
                 edges[_creaseParams[4]],
                 _creaseParams[0],
                 _creaseParams[2],
@@ -884,7 +1025,9 @@ function initModel(globals){
                 type,
                 nodes[_creaseParams[1]],
                 nodes[_creaseParams[3]],
-                creases.length));
+                creases.length);
+            creases.push(crease);
+
         }
 
         vertices = [];
@@ -982,6 +1125,8 @@ function initModel(globals){
         updateEdgeVisibility();
         updateMeshVisibility();
         buildThickGeometry();
+        if (globals.simType != "thick") resetThinAreaReference();
+        else notifyThinAreaStats();
 
         syncSolver();
 
@@ -1048,6 +1193,8 @@ function initModel(globals){
         updateEdgeVisibility: updateEdgeVisibility,
         updateMeshVisibility: updateMeshVisibility,
         updateThickPanelGeometry: updateThickPanelGeometry,
+        resetThinAreaReference: resetThinAreaReference,
+        getThinAreaStats: cloneThinAreaStats,
 
         getDimensions: getDimensions//for save stl
     }

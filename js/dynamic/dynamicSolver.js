@@ -532,13 +532,26 @@ function initDynamicSolver(globals){
         textureDimEdges = calcTextureSize(numEdges);
 
         var numCreases = creases.length;
+        var nodeCreasesActive = [];
+        var nodeInvCreasesActive = [];
+        for (var i=0;i<nodes.length;i++){
+            nodeCreasesActive.push([]);
+            nodeInvCreasesActive.push([]);
+        }
+        for (var i=0;i<numCreases;i++){
+            var crease = creases[i];
+            crease._solverIndex = i;
+            nodeCreasesActive[crease.node1.getIndex()].push(crease);
+            nodeCreasesActive[crease.node2.getIndex()].push(crease);
+            nodeInvCreasesActive[crease.edge.nodes[0].getIndex()].push(crease);
+            nodeInvCreasesActive[crease.edge.nodes[1].getIndex()].push(crease);
+        }
         textureDimCreases = calcTextureSize(numCreases);
 
         var numNodeCreases = 0;
         for (var i=0;i<nodes.length;i++){
-            numNodeCreases += nodes[i].numCreases();
+            numNodeCreases += nodeCreasesActive[i].length + nodeInvCreasesActive[i].length;
         }
-        numNodeCreases += numCreases*2;//reactions
         textureDimNodeCreases = calcTextureSize(numNodeCreases);
 
         var numFaces = faces.length;
@@ -624,17 +637,16 @@ function initDynamicSolver(globals){
         for (var i=0;i<nodes.length;i++){
             mass[4*i] = nodes[i].getSimMass();
             meta[i*4+2] = index;
-            var nodeCreases = nodes[i].creases;
-            var nodeInvCreases = nodes[i].invCreases;//nodes attached to crease move in opposite direction
-            // console.log(nodeInvCreases);
+            var nodeCreases = nodeCreasesActive[i];
+            var nodeInvCreases = nodeInvCreasesActive[i];//nodes attached to crease move in opposite direction
             meta[i*4+3] = nodeCreases.length + nodeInvCreases.length;
             for (var j=0;j<nodeCreases.length;j++){
-                nodeCreaseMeta[index*4] = nodeCreases[j].getIndex();
+                nodeCreaseMeta[index*4] = nodeCreases[j]._solverIndex;
                 nodeCreaseMeta[index*4+1] = nodeCreases[j].getNodeIndex(nodes[i]);//type 1, 2, 3, 4
                 index++;
             }
             for (var j=0;j<nodeInvCreases.length;j++){
-                nodeCreaseMeta[index*4] = nodeInvCreases[j].getIndex();
+                nodeCreaseMeta[index*4] = nodeInvCreases[j]._solverIndex;
                 nodeCreaseMeta[index*4+1] = nodeInvCreases[j].getNodeIndex(nodes[i]);//type 1, 2, 3, 4
                 index++;
             }

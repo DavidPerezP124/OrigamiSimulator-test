@@ -14,6 +14,7 @@ function initPattern(globals){
         foldData.edges_vertices = [];
         foldData.edges_assignment = [];//B = boundary, M = mountain, V = valley, C = cut, F = facet, U = hinge
         foldData.edges_foldAngle = [];//target angles
+        foldData.edges_isPattern = [];
         delete foldData.vertices_vertices;
         delete foldData.faces_vertices;
         delete foldData.vertices_edges;
@@ -116,7 +117,7 @@ function initPattern(globals){
             opacity = 1;
         }
         if (isNaN(strokeOpacity)) {
-            opacity = 1;
+            strokeOpacity = 1;
         }
         return opacity * strokeOpacity;
     }
@@ -503,31 +504,37 @@ function initPattern(globals){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("B");
             foldData.edges_foldAngle.push(null);
+            foldData.edges_isPattern.push(true);
         });
         _.each(_mountainsRaw, function(edge){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("M");
             foldData.edges_foldAngle.push(edge[2]);
+            foldData.edges_isPattern.push(true);
         });
         _.each(_valleysRaw, function(edge){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("V");
             foldData.edges_foldAngle.push(edge[2]);
+            foldData.edges_isPattern.push(true);
         });
         _.each(_triangulationsRaw, function(edge){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("F");
             foldData.edges_foldAngle.push(0);
+            foldData.edges_isPattern.push(true);
         });
         _.each(_hingesRaw, function(edge){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("U");
             foldData.edges_foldAngle.push(null);
+            foldData.edges_isPattern.push(true);
         });
         _.each(_cutsRaw, function(edge){
             foldData.edges_vertices.push([edge[0], edge[1]]);
             foldData.edges_assignment.push("C");
             foldData.edges_foldAngle.push(null);
+            foldData.edges_isPattern.push(true);
         });
 
         if (foldData.vertices_coords.length == 0 || foldData.edges_vertices.length == 0){
@@ -645,6 +652,25 @@ function initPattern(globals){
         return fold;
     }
 
+    function normalizeEdgesIsPattern(fold){
+        var edges = fold.edges_vertices || [];
+        var edgesIsPattern = fold.edges_isPattern;
+        if (!edgesIsPattern) edgesIsPattern = [];
+        if (edgesIsPattern.length !== edges.length){
+            var normalized = [];
+            for (var i=0;i<edges.length;i++){
+                normalized.push(edgesIsPattern[i] !== false);
+            }
+            fold.edges_isPattern = normalized;
+            return normalized;
+        }
+        for (var i=0;i<edgesIsPattern.length;i++){
+            edgesIsPattern[i] = edgesIsPattern[i] !== false;
+        }
+        fold.edges_isPattern = edgesIsPattern;
+        return edgesIsPattern;
+    }
+
     function sortVerticesEdges(fold){
         for (var i=0;i<fold.vertices_vertices.length;i++){
             var verticesVertices = fold.vertices_vertices[i];
@@ -669,6 +695,7 @@ function initPattern(globals){
     }
 
     function splitCuts(fold){
+        var edgesIsPattern = normalizeEdgesIsPattern(fold);
         fold = sortVerticesEdges(fold);
         fold = facesVerticesToVerticesFaces(fold);
         //go around each vertex and split cut in clockwise order
@@ -687,10 +714,12 @@ function initPattern(globals){
                     groupIndex++;
                     var newEdgeIndex = fold.edges_vertices.length;
                     var edge = fold.edges_vertices[edgeIndex];
+                    var edgeIsPattern = edgesIsPattern[edgeIndex] !== false;
                     fold.edges_vertices.push([edge[0], edge[1]]);
                     fold.edges_assignment[edgeIndex] = "B";
                     fold.edges_foldAngle.push(null);
                     fold.edges_assignment.push("B");
+                    edgesIsPattern.push(edgeIsPattern);
                     //add new boundary edge to other vertex
                     var otherVertex = edge[0];
                     if (otherVertex == i) otherVertex = edge[1];
@@ -916,10 +945,12 @@ function initPattern(globals){
     }
 
     function mergeEdge(fold, v1, v2, v3){//v2 is center vertex
+        var edgesIsPattern = normalizeEdgesIsPattern(fold);
         var angleAvg = 0;
         var avgSum = 0;
         var angles = [];
         var edgeAssignment = null;
+        var edgeIsPattern = true;
         var edgeIndices = [];
         for (var i=fold.edges_vertices.length-1;i>=0;i--){
             var edge = fold.edges_vertices[i];
@@ -937,6 +968,7 @@ function initPattern(globals){
                     angleAvg += angle;
                     avgSum++;
                 }
+                edgeIsPattern = edgeIsPattern && (edgesIsPattern[i] !== false);
                 edgeIndices.push(i);//larger index in front
             }
         }
@@ -948,11 +980,13 @@ function initPattern(globals){
             fold.edges_vertices.splice(index, 1);
             fold.edges_assignment.splice(index, 1);
             fold.edges_foldAngle.splice(index, 1);
+            edgesIsPattern.splice(index, 1);
         }
         fold.edges_vertices.push([v1, v3]);
         fold.edges_assignment.push(edgeAssignment);
         if (avgSum > 0) fold.edges_foldAngle.push(angleAvg/avgSum);
         else fold.edges_foldAngle.push(null);
+        edgesIsPattern.push(edgeIsPattern);
         var index = fold.vertices_vertices[v1].indexOf(v2);
         fold.vertices_vertices[v1].splice(index, 1);
         fold.vertices_vertices[v1].push(v3);
@@ -987,6 +1021,7 @@ function initPattern(globals){
         var edges = fold.edges_vertices;
         var foldAngles = fold.edges_foldAngle;
         var assignments = fold.edges_assignment;
+        var edgesIsPattern = normalizeEdgesIsPattern(fold);
         var triangulatedFaces = [];
         for (var i=0;i<faces.length;i++){
 
@@ -1009,12 +1044,14 @@ function initPattern(globals){
                     edges.push([face[1], face[3]]);
                     foldAngles.push(0);
                     assignments.push("F");
+                    edgesIsPattern.push(false);
                     triangulatedFaces.push([face[0], face[1], face[3]]);
                     triangulatedFaces.push([face[1], face[2], face[3]]);
                 } else {
                     edges.push([face[0], face[2]]);
                     foldAngles.push(0);
                     assignments.push("F");
+                    edgesIsPattern.push(false);
                     triangulatedFaces.push([face[0], face[1], face[2]]);
                     triangulatedFaces.push([face[0], face[2], face[3]]);
                 }
@@ -1114,16 +1151,19 @@ function initPattern(globals){
                         edges.push([tri[0], tri[1]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     } else if (k==1){
                         faceEdges.push(edges.length);
                         edges.push([tri[2], tri[1]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     } else if (k==2){
                         faceEdges.push(edges.length);
                         edges.push([tri[2], tri[0]]);
                         foldAngles.push(0);
                         assignments.push("F");
+                        edgesIsPattern.push(false);
                     }
                 }
 
@@ -1131,6 +1171,7 @@ function initPattern(globals){
             }
         }
         fold.faces_vertices = triangulatedFaces;
+        fold.edges_isPattern = edgesIsPattern;
         return fold;
     }
 
@@ -1226,6 +1267,7 @@ function initPattern(globals){
         var edges = fold.edges_vertices;
         var foldAngles = fold.edges_foldAngle;
         var assignments = fold.edges_assignment;
+        var edgesIsPattern = normalizeEdgesIsPattern(fold);
         for (var i=edges.length-1;i>=0;i--){
             for (var j=i-1;j>=0;j--){
                 var v1 = makeVector2(vertices[edges[i][0]]);
@@ -1259,17 +1301,21 @@ function initPattern(globals){
                     if (seg1Int){
                         var foldAngle = foldAngles[i];
                         var assignment = assignments[i];
+                        var isPattern = edgesIsPattern[i] !== false;
                         edges.splice(i, 1, [vertIndex, edges[i][0]], [vertIndex, edges[i][1]]);
                         foldAngles.splice(i, 1, foldAngle, foldAngle);
                         assignments.splice(i, 1, assignment, assignment);
+                        edgesIsPattern.splice(i, 1, isPattern, isPattern);
                         i++;
                     }
                     if (seg2Int){
                         var foldAngle = foldAngles[j];
                         var assignment = assignments[j];
+                        var isPattern = edgesIsPattern[j] !== false;
                         edges.splice(j, 1, [vertIndex, edges[j][0]], [vertIndex, edges[j][1]]);
                         foldAngles.splice(j, 1, foldAngle, foldAngle);
                         assignments.splice(j, 1, assignment, assignment);
+                        edgesIsPattern.splice(j, 1, isPattern, isPattern);
                         j++;
                         i++;
                     }
