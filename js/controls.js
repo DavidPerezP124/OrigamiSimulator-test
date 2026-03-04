@@ -136,6 +136,32 @@ function initControls(globals){
     setCheckbox("#doublesidedOBJ", globals.doublesidedOBJ, function(val){
         globals.doublesidedOBJ = val;
     });
+    function setSnapExportEnabled(val){
+        globals.snapExportEnabled = val;
+        $("#snapExportEnabledSTL").prop("checked", val);
+        $("#snapExportEnabledOBJ").prop("checked", val);
+    }
+    setCheckbox("#snapExportEnabledSTL", globals.snapExportEnabled, function(val){
+        setSnapExportEnabled(val);
+    });
+    setCheckbox("#snapExportEnabledOBJ", globals.snapExportEnabled, function(val){
+        setSnapExportEnabled(val);
+    });
+    setInput(".snapPlateThickness", globals.snapPlateThickness, function(val){
+        globals.snapPlateThickness = val;
+    }, 0);
+    setInput(".snapInterlayerGap", globals.snapInterlayerGap, function(val){
+        globals.snapInterlayerGap = val;
+    }, 0);
+    setInput(".snapPinRadius", globals.snapPinRadius, function(val){
+        globals.snapPinRadius = val;
+    }, 0);
+    setInput(".snapPinHeight", globals.snapPinHeight, function(val){
+        globals.snapPinHeight = val;
+    }, 0);
+    setInput(".snapPinClearance", globals.snapPinClearance, function(val){
+        globals.snapPinClearance = val;
+    }, 0);
     setCheckbox("#polyFacesOBJ", globals.polyFacesOBJ, function(val){
         globals.polyFacesOBJ = val;
     });
@@ -441,6 +467,17 @@ function initControls(globals){
         else $("#thickPanelSettings").hide();
     }
 
+    function normalizeMiuraPhase(phase){
+        var parsed = parseInt(phase, 10);
+        if (!isFinite(parsed)) parsed = 1;
+        return ((parsed % 2) + 2) % 2;
+    }
+
+    if (globals.thickAutoTuneEnabled === undefined) globals.thickAutoTuneEnabled = true;
+    if (globals.miuraColumnAutoPhase === undefined) globals.miuraColumnAutoPhase = true;
+    if (globals.thickAutoTuneBoost === undefined) globals.thickAutoTuneBoost = true;
+    globals.miuraColumnPhase = normalizeMiuraPhase(globals.miuraColumnPhase);
+
     function updateThinAreaStats(stats, isThinMode){
         if (!isThinMode || !stats || !stats.valid){
             $("#thinAreaCurrent").html("--");
@@ -455,6 +492,53 @@ function initControls(globals){
         $("#thinAreaReference").html(stats.reference.toFixed(6));
         $("#thinAreaDelta").html(deltaSign + stats.delta.toFixed(6));
         $("#thinAreaDeltaPercent").html(percentSign + stats.deltaPercent.toFixed(2) + "%");
+    }
+
+    function updateThickAutoTuneState(stats, isThickMode){
+        if (!isThickMode){
+            $("#thickMiuraPhaseState").html("--");
+            $("#thickMiuraBoostState").html("--");
+            return;
+        }
+        var manualPhase = normalizeMiuraPhase(globals.miuraColumnPhase);
+        var autoPhaseEnabled = globals.miuraColumnAutoPhase !== false && globals.thickAutoTuneEnabled !== false;
+        var tunedPhase = manualPhase;
+        if (stats && stats.phase !== null && stats.phase !== undefined){
+            tunedPhase = normalizeMiuraPhase(stats.phase);
+        }
+        var phaseLabel = autoPhaseEnabled ? (tunedPhase + " (auto)") : (manualPhase + " (manual)");
+        $("#thickMiuraPhaseState").html(phaseLabel);
+
+        var boost = 0;
+        if (stats && isFinite(stats.boost)) boost = Math.max(0, stats.boost);
+        var boostLabel = (globals.thickAutoTuneBoost !== false && globals.thickAutoTuneEnabled !== false)
+            ? ("+" + boost.toFixed(4))
+            : "+0.0000";
+        $("#thickMiuraBoostState").html(boostLabel);
+    }
+
+    function updateThickClearanceStats(stats, isThickMode){
+        var autoState = null;
+        if (globals.model && globals.model.getThickAutoTuneState){
+            autoState = globals.model.getThickAutoTuneState();
+        }
+        updateThickAutoTuneState(autoState, isThickMode);
+        if (!isThickMode || !stats || !stats.valid){
+            $("#thickClearanceMin").html("--");
+            $("#thickCollisionState").html("--");
+            $("#thickClearancePairs").html("--");
+            return;
+        }
+        if (stats.skipped){
+            $("#thickClearanceMin").html("skipped");
+            $("#thickCollisionState").html("n/a");
+            $("#thickClearancePairs").html(stats.checkedPairs);
+            return;
+        }
+        $("#thickClearanceMin").html(stats.minDistance.toFixed(6));
+        $("#thickCollisionState").html(stats.collision ? "yes" : "no");
+        var suffix = stats.truncated ? " (truncated)" : "";
+        $("#thickClearancePairs").html(stats.checkedPairs + suffix);
     }
 
     setRadio("simType", globals.simType, function(val){
@@ -474,10 +558,14 @@ function initControls(globals){
             if (globals.model.getThinAreaStats){
                 updateThinAreaStats(globals.model.getThinAreaStats(), globals.simType != "thick");
             }
+            if (globals.model.getThickClearanceStats){
+                updateThickClearanceStats(globals.model.getThickClearanceStats(), globals.simType == "thick");
+            }
         }
     });
     updateThickPanelUI();
     updateThinAreaStats(null, globals.simType != "thick");
+    updateThickClearanceStats(null, globals.simType == "thick");
 
     setSliderInput("#axialStiffness", globals.axialStiffness, 10, 100, 1, function(val){
         globals.axialStiffness = val;
@@ -512,9 +600,59 @@ function initControls(globals){
         globals.minHingeGap = val;
         if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
     });
+    setSliderInput("#miuraColumnBoost", globals.miuraColumnBoost, 0, 0.2, 0.001, function(val){
+        globals.miuraColumnBoost = val;
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+    });
+    var miuraPhaseSlider = setSliderInput("#miuraColumnPhase", globals.miuraColumnPhase, 0, 1, 1, function(val){
+        globals.miuraColumnPhase = normalizeMiuraPhase(val);
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+    });
+
+    function refreshThickAutoTuneUI(){
+        if (!globals.model || !globals.model.getThickAutoTuneState) {
+            updateThickAutoTuneState(null, globals.simType == "thick");
+            return;
+        }
+        updateThickAutoTuneState(globals.model.getThickAutoTuneState(), globals.simType == "thick");
+    }
+
+    function updateThickTuningControls(){
+        var disableManualPhase = globals.thickAutoTuneEnabled !== false && globals.miuraColumnAutoPhase !== false;
+        miuraPhaseSlider.slider("option", "disabled", disableManualPhase);
+        $("#miuraColumnPhase>input").prop("disabled", disableManualPhase);
+    }
+
+    setCheckbox("#thickAutoTuneEnabled", globals.thickAutoTuneEnabled !== false, function(val){
+        globals.thickAutoTuneEnabled = val;
+        updateThickTuningControls();
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+        else refreshThickAutoTuneUI();
+    });
+    setCheckbox("#miuraColumnAutoPhase", globals.miuraColumnAutoPhase !== false, function(val){
+        globals.miuraColumnAutoPhase = val;
+        updateThickTuningControls();
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+        else refreshThickAutoTuneUI();
+    });
+    setCheckbox("#thickAutoTuneBoost", globals.thickAutoTuneBoost !== false, function(val){
+        globals.thickAutoTuneBoost = val;
+        if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
+        else refreshThickAutoTuneUI();
+    });
+    updateThickTuningControls();
+    refreshThickAutoTuneUI();
+
+    function normalizePaperLinkageType(val){
+        var linkageType = (val || "").toLowerCase();
+        if (linkageType == "bennettpaper" || linkageType == "myard" || linkageType == "bricard") return linkageType;
+        return "bennettpaper";
+    }
+    globals.thickLinkageType = normalizePaperLinkageType(globals.thickLinkageType);
     $("#thickLinkageType").val(globals.thickLinkageType);
     $("#thickLinkageType").on("change", function(){
-        globals.thickLinkageType = $(this).val();
+        globals.thickLinkageType = normalizePaperLinkageType($(this).val());
+        $(this).val(globals.thickLinkageType);
         if (globals.simType == "thick") globals.model.updateThickPanelGeometry();
     });
 
@@ -992,6 +1130,7 @@ function initControls(globals){
         setDeltaT: setDeltaT,
         updateCreasePercent: updateCreasePercent,
         setSliderInputVal: setSliderInputVal,
-        updateThinAreaStats: updateThinAreaStats
+        updateThinAreaStats: updateThinAreaStats,
+        updateThickClearanceStats: updateThickClearanceStats
     }
 }

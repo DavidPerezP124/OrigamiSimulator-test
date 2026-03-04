@@ -478,19 +478,94 @@ function initPattern(globals){
             var ns = 'http://www.w3.org/2000/svg';
             var svg = document.createElementNS(ns, 'svg');
             svg.setAttribute('viewBox', viewBoxTxt);
-            for (var i=0;i<rawFold.edges_vertices.length;i++){
+            var edgesIsPattern = rawFold.edges_isPattern || [];
+            var useCreasePairPattern = false;
+            var pairScale = parseFloat(globals.thickCreasePairSeparationScale);
+            if (!isFinite(pairScale) || pairScale <= 0) pairScale = 2;
+            var pairSeparation = pairScale * Math.max(0, globals.panelThickness || 0) + Math.max(0, globals.minHingeGap || 0);
+            var pairOffset = 0.5 * pairSeparation;
+            if (!(pairOffset > 0)) pairOffset = strokeWidth * 1.5;
+            pairOffset = Math.max(pairOffset, strokeWidth * 1.1);
+            pairOffset = Math.min(pairOffset, scale * 0.05);
+
+            function edgeIsPattern(index){
+                if (!edgesIsPattern || edgesIsPattern.length === 0) return true;
+                return edgesIsPattern[index] !== false;
+            }
+
+            function addSvgLine(x1, y1, x2, y2, assignment, opacity){
                 var line = document.createElementNS(ns, 'line');
-                var edge = rawFold.edges_vertices[i];
-                var vertex = rawFold.vertices_coords[edge[0]];
-                line.setAttribute('stroke', colorForAssignment(rawFold.edges_assignment[i]));
-                line.setAttribute('opacity', opacityForAngle(rawFold.edges_foldAngle[i], rawFold.edges_assignment[i]));
-                line.setAttribute('x1', vertex[0]);
-                line.setAttribute('y1', vertex[2]);
-                vertex = rawFold.vertices_coords[edge[1]];
-                line.setAttribute('x2', vertex[0]);
-                line.setAttribute('y2', vertex[2]);
+                line.setAttribute('stroke', colorForAssignment(assignment));
+                line.setAttribute('opacity', opacity);
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
                 line.setAttribute('stroke-width', strokeWidth);
                 svg.appendChild(line);
+            }
+
+            for (var i=0;i<rawFold.edges_vertices.length;i++){
+                var edge = rawFold.edges_vertices[i];
+                var assignment = rawFold.edges_assignment[i];
+                var opacity = opacityForAngle(rawFold.edges_foldAngle[i], assignment);
+                var vertex0 = rawFold.vertices_coords[edge[0]];
+                var vertex1 = rawFold.vertices_coords[edge[1]];
+                if (!vertex0 || !vertex1) continue;
+
+                var x1 = vertex0[0];
+                var y1 = vertex0[2];
+                var x2 = vertex1[0];
+                var y2 = vertex1[2];
+
+                if (useCreasePairPattern && edgeIsPattern(i) && (assignment == "M" || assignment == "V")){
+                    var dx = x2 - x1;
+                    var dy = y2 - y1;
+                    var len = Math.sqrt(dx*dx + dy*dy);
+                    if (len > 1e-9){
+                        var nx = -dy / len;
+                        var ny = dx / len;
+                        var ox = nx * pairOffset;
+                        var oy = ny * pairOffset;
+                        addSvgLine(x1 + ox, y1 + oy, x2 + ox, y2 + oy, assignment, opacity);
+                        addSvgLine(x1 - ox, y1 - oy, x2 - ox, y2 - oy, assignment, opacity);
+                        continue;
+                    }
+                }
+                addSvgLine(x1, y1, x2, y2, assignment, opacity);
+            }
+
+            if (useCreasePairPattern && globals.thickStressReliefHoles !== false){
+                var minDegree = parseInt(globals.thickStressReliefMinDegree, 10);
+                if (!isFinite(minDegree) || minDegree < 3) minDegree = 3;
+                var holeScale = parseFloat(globals.thickStressReliefRadiusScale);
+                if (!isFinite(holeScale) || holeScale <= 0) holeScale = 0.7;
+                var holeRadius = Math.max(strokeWidth * 2, pairOffset * holeScale);
+                holeRadius = Math.min(holeRadius, scale * 0.08);
+
+                var degree = new Int32Array(rawFold.vertices_coords.length);
+                for (var i=0;i<rawFold.edges_vertices.length;i++){
+                    if (!edgeIsPattern(i)) continue;
+                    var assignment = rawFold.edges_assignment[i];
+                    if (assignment != "M" && assignment != "V") continue;
+                    var edge = rawFold.edges_vertices[i];
+                    degree[edge[0]]++;
+                    degree[edge[1]]++;
+                }
+
+                for (var i=0;i<degree.length;i++){
+                    if (degree[i] < minDegree) continue;
+                    var vertex = rawFold.vertices_coords[i];
+                    if (!vertex) continue;
+                    var circle = document.createElementNS(ns, 'circle');
+                    circle.setAttribute('cx', vertex[0]);
+                    circle.setAttribute('cy', vertex[2]);
+                    circle.setAttribute('r', holeRadius);
+                    circle.setAttribute('fill', "none");
+                    circle.setAttribute('stroke', "#000");
+                    circle.setAttribute('stroke-width', strokeWidth * 0.8);
+                    svg.appendChild(circle);
+                }
             }
             $("#svgViewer").html(svg);
     }

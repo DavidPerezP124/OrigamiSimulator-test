@@ -71,6 +71,10 @@ function initModel(globals){
 
         thickPositions = null;
         thickIndices = null;
+        lastThickEdgeInsetByKey = {};
+        autoMiuraPhase = null;
+        autoMiuraBoost = 0;
+        thickClearanceFrameCountdown = 0;
         thinAreaReference = null;
         if (thinAreaStats){
             thinAreaStats.valid = false;
@@ -78,6 +82,14 @@ function initModel(globals){
             thinAreaStats.reference = 0;
             thinAreaStats.delta = 0;
             thinAreaStats.deltaPercent = 0;
+        }
+        if (thickClearanceStats){
+            thickClearanceStats.valid = false;
+            thickClearanceStats.skipped = false;
+            thickClearanceStats.minDistance = 0;
+            thickClearanceStats.collision = false;
+            thickClearanceStats.checkedPairs = 0;
+            thickClearanceStats.truncated = false;
         }
     }
 
@@ -101,6 +113,15 @@ function initModel(globals){
         delta: 0,
         deltaPercent: 0
     };
+    var thickClearanceStats = {
+        valid: false,
+        skipped: false,
+        minDistance: 0,
+        collision: false,
+        checkedPairs: 0,
+        truncated: false
+    };
+    var thickClearanceFrameCountdown = 0;
     var nodes = [];
     var faces = [];
     var edges = [];
@@ -108,6 +129,12 @@ function initModel(globals){
     var vertices = [];//indexed vertices array
     var edgeAssignmentByKey = {};
     var edgeIsPatternByKey = {};
+    var edgeFoldAngleByKey = {};
+    var edgeGapOverrideByKey = {};
+    var edgeGapScaleByKey = {};
+    var lastThickEdgeInsetByKey = {};
+    var autoMiuraPhase = null;
+    var autoMiuraBoost = 0;
     var thickSmoothGroups = [];
     var fold, creaseParams;
 
@@ -201,6 +228,56 @@ function initModel(globals){
         return (a < b) ? (a + "_" + b) : (b + "_" + a);
     }
 
+    function hasNonZeroFoldAngleForEdgeKey(key){
+        var angle = edgeFoldAngleByKey[key];
+        return isFinite(angle) && Math.abs(angle) > 1e-6;
+    }
+
+    function isCreaseLikeAssignment(assignment, key){
+        if (assignment == "M" || assignment == "V") return true;
+        if (assignment == "F" && hasNonZeroFoldAngleForEdgeKey(key)) return true;
+        return false;
+    }
+
+    function cloneNumberMap(map){
+        var clone = {};
+        if (!map) return clone;
+        for (var key in map){
+            if (!map.hasOwnProperty(key)) continue;
+            var value = map[key];
+            if (!isFinite(value)) continue;
+            clone[key] = value;
+        }
+        return clone;
+    }
+
+    function parseNonNegativeNumber(value){
+        var num = parseFloat(value);
+        if (!isFinite(num) || num < 0) return null;
+        return num;
+    }
+
+    function addIndexedGapOverrides(values, targetMap, scaleFactor){
+        if (!values || values.length !== fold.edges_vertices.length) return;
+        for (var i=0;i<values.length;i++){
+            var amount = parseNonNegativeNumber(values[i]);
+            if (amount === null) continue;
+            var edge = fold.edges_vertices[i];
+            var key = edgeKeyForPair(edge[0], edge[1]);
+            targetMap[key] = amount * scaleFactor;
+        }
+    }
+
+    function mapNumberForEdgeKey(sourceMap, key){
+        if (!sourceMap) return null;
+        var value = parseNonNegativeNumber(sourceMap[key]);
+        if (value !== null) return value;
+        var parts = key.split("_");
+        if (parts.length !== 2) return null;
+        var reversedKey = parts[1] + "_" + parts[0];
+        return parseNonNegativeNumber(sourceMap[reversedKey]);
+    }
+
     function getFaceLocalIndex(face, vertexIndex){
         if (face[0] === vertexIndex) return 0;
         if (face[1] === vertexIndex) return 1;
@@ -281,7 +358,7 @@ function initModel(globals){
             var assignment = hasAssignment ? edgeAssignmentByKey[key] : "F";
             // Some imported FOLD files omit interior triangulation edges from edges_vertices.
             // Treat unknown shared edges as facet splits so thick mode stays watertight.
-            var isFacet = assignment == "F" || !hasAssignment;
+            var isFacet = !hasAssignment || !isCreaseLikeAssignment(assignment, key);
             var isPattern = hasAssignment && edgeIsPatternByKey[key] !== false;
             var addSide = isBoundary || (isPattern && !isFacet);
             if (!addSide){
@@ -399,6 +476,294 @@ function initModel(globals){
         }
     }
 
+    function cloneThickClearanceStats(){
+        return {
+            valid: thickClearanceStats.valid,
+            skipped: thickClearanceStats.skipped,
+            minDistance: thickClearanceStats.minDistance,
+            collision: thickClearanceStats.collision,
+            checkedPairs: thickClearanceStats.checkedPairs,
+            truncated: thickClearanceStats.truncated
+        };
+    }
+
+    function cloneThickAutoTuneState(){
+        return {
+            phase: autoMiuraPhase,
+            boost: autoMiuraBoost
+        };
+    }
+
+    function notifyThickClearanceStats(){
+        if (globals.controls && globals.controls.updateThickClearanceStats){
+            globals.controls.updateThickClearanceStats(cloneThickClearanceStats(), globals.simType == "thick");
+        }
+    }
+
+    function squaredDistanceBetweenAABBs(a, b){
+        var dx = 0;
+        if (a.minX > b.maxX) dx = a.minX - b.maxX;
+        else if (b.minX > a.maxX) dx = b.minX - a.maxX;
+
+        var dy = 0;
+        if (a.minY > b.maxY) dy = a.minY - b.maxY;
+        else if (b.minY > a.maxY) dy = b.minY - a.maxY;
+
+        var dz = 0;
+        if (a.minZ > b.maxZ) dz = a.minZ - b.maxZ;
+        else if (b.minZ > a.maxZ) dz = b.minZ - a.maxZ;
+
+        return dx*dx + dy*dy + dz*dz;
+    }
+
+    function facePairSharesVertex(faceA, faceB){
+        for (var i=0;i<3;i++){
+            var va = faceA[i];
+            if (va === faceB[0] || va === faceB[1] || va === faceB[2]) return true;
+        }
+        return false;
+    }
+
+    function pointTriangleDistanceSq(p, a, b, c){
+        var ab = b.clone().sub(a);
+        var ac = c.clone().sub(a);
+        var ap = p.clone().sub(a);
+        var d1 = ab.dot(ap);
+        var d2 = ac.dot(ap);
+        if (d1 <= 0 && d2 <= 0) return ap.lengthSq();
+
+        var bp = p.clone().sub(b);
+        var d3 = ab.dot(bp);
+        var d4 = ac.dot(bp);
+        if (d3 >= 0 && d4 <= d3) return bp.lengthSq();
+
+        var vc = d1*d4 - d3*d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0){
+            var v = d1 / (d1 - d3);
+            var projAB = a.clone().add(ab.multiplyScalar(v));
+            return p.distanceToSquared(projAB);
+        }
+
+        var cp = p.clone().sub(c);
+        var d5 = ab.dot(cp);
+        var d6 = ac.dot(cp);
+        if (d6 >= 0 && d5 <= d6) return cp.lengthSq();
+
+        var vb = d5*d2 - d1*d6;
+        if (vb <= 0 && d2 >= 0 && d6 <= 0){
+            var w = d2 / (d2 - d6);
+            var projAC = a.clone().add(ac.multiplyScalar(w));
+            return p.distanceToSquared(projAC);
+        }
+
+        var va = d3*d6 - d5*d4;
+        var bc = c.clone().sub(b);
+        if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0){
+            var w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            var projBC = b.clone().add(bc.multiplyScalar(w));
+            return p.distanceToSquared(projBC);
+        }
+
+        var n = ab.cross(ac);
+        var nLenSq = n.lengthSq();
+        if (nLenSq < 1e-20) {
+            var minSq = p.distanceToSquared(a);
+            minSq = Math.min(minSq, p.distanceToSquared(b));
+            minSq = Math.min(minSq, p.distanceToSquared(c));
+            return minSq;
+        }
+        var dist = n.dot(ap);
+        return (dist * dist) / nLenSq;
+    }
+
+    function segmentSegmentDistanceSq(p1, q1, p2, q2){
+        var d1 = q1.clone().sub(p1);
+        var d2 = q2.clone().sub(p2);
+        var r = p1.clone().sub(p2);
+        var a = d1.dot(d1);
+        var e = d2.dot(d2);
+        var f = d2.dot(r);
+        var s, t;
+        var eps = 1e-12;
+
+        if (a <= eps && e <= eps) return p1.distanceToSquared(p2);
+        if (a <= eps){
+            s = 0;
+            t = Math.max(0, Math.min(1, f / e));
+        } else {
+            var c = d1.dot(r);
+            if (e <= eps){
+                t = 0;
+                s = Math.max(0, Math.min(1, -c / a));
+            } else {
+                var b = d1.dot(d2);
+                var denom = a*e - b*b;
+                if (denom !== 0){
+                    s = Math.max(0, Math.min(1, (b*f - c*e) / denom));
+                } else {
+                    s = 0;
+                }
+                var tNom = b*s + f;
+                if (tNom < 0){
+                    t = 0;
+                    s = Math.max(0, Math.min(1, -c / a));
+                } else if (tNom > e){
+                    t = 1;
+                    s = Math.max(0, Math.min(1, (b - c) / a));
+                } else {
+                    t = tNom / e;
+                }
+            }
+        }
+        var c1 = p1.clone().add(d1.multiplyScalar(s));
+        var c2 = p2.clone().add(d2.multiplyScalar(t));
+        return c1.distanceToSquared(c2);
+    }
+
+    function triangleTriangleDistanceSq(a0, a1, a2, b0, b1, b2){
+        var minSq = Infinity;
+        minSq = Math.min(minSq, pointTriangleDistanceSq(a0, b0, b1, b2));
+        minSq = Math.min(minSq, pointTriangleDistanceSq(a1, b0, b1, b2));
+        minSq = Math.min(minSq, pointTriangleDistanceSq(a2, b0, b1, b2));
+        minSq = Math.min(minSq, pointTriangleDistanceSq(b0, a0, a1, a2));
+        minSq = Math.min(minSq, pointTriangleDistanceSq(b1, a0, a1, a2));
+        minSq = Math.min(minSq, pointTriangleDistanceSq(b2, a0, a1, a2));
+
+        var aEdges = [[a0, a1], [a1, a2], [a2, a0]];
+        var bEdges = [[b0, b1], [b1, b2], [b2, b0]];
+        for (var i=0;i<3;i++){
+            for (var j=0;j<3;j++){
+                var d = segmentSegmentDistanceSq(
+                    aEdges[i][0], aEdges[i][1],
+                    bEdges[j][0], bEdges[j][1]
+                );
+                if (d < minSq) minSq = d;
+            }
+        }
+        return minSq;
+    }
+
+    function updateThickClearanceStats(force, silent){
+        if (globals.simType != "thick" || !globals.thickClearanceEnabled){
+            thickClearanceStats.valid = false;
+            thickClearanceStats.skipped = false;
+            thickClearanceStats.minDistance = 0;
+            thickClearanceStats.collision = false;
+            thickClearanceStats.checkedPairs = 0;
+            thickClearanceStats.truncated = false;
+            if (!silent) notifyThickClearanceStats();
+            return cloneThickClearanceStats();
+        }
+        var stride = parseInt(globals.thickClearanceCheckStride, 10);
+        if (!isFinite(stride) || stride < 1) stride = 1;
+        if (!force){
+            if (thickClearanceFrameCountdown > 0){
+                thickClearanceFrameCountdown--;
+                return cloneThickClearanceStats();
+            }
+            thickClearanceFrameCountdown = stride - 1;
+        } else {
+            thickClearanceFrameCountdown = stride - 1;
+        }
+
+        if (!thickPositions || !faces || faces.length === 0){
+            thickClearanceStats.valid = false;
+            thickClearanceStats.skipped = false;
+            thickClearanceStats.minDistance = 0;
+            thickClearanceStats.collision = false;
+            thickClearanceStats.checkedPairs = 0;
+            thickClearanceStats.truncated = false;
+            if (!silent) notifyThickClearanceStats();
+            return cloneThickClearanceStats();
+        }
+
+        var maxFaces = parseInt(globals.thickClearanceMaxFaces, 10);
+        if (!isFinite(maxFaces) || maxFaces < 1) maxFaces = 300;
+        if (faces.length > maxFaces){
+            thickClearanceStats.valid = true;
+            thickClearanceStats.skipped = true;
+            thickClearanceStats.minDistance = 0;
+            thickClearanceStats.collision = false;
+            thickClearanceStats.checkedPairs = 0;
+            thickClearanceStats.truncated = false;
+            if (!silent) notifyThickClearanceStats();
+            return cloneThickClearanceStats();
+        }
+
+        function triAt(faceIndex, localOffset){
+            var base = faceIndex * 18 + localOffset;
+            var a = new THREE.Vector3(thickPositions[base], thickPositions[base+1], thickPositions[base+2]);
+            var b = new THREE.Vector3(thickPositions[base+3], thickPositions[base+4], thickPositions[base+5]);
+            var c = new THREE.Vector3(thickPositions[base+6], thickPositions[base+7], thickPositions[base+8]);
+            return {
+                faceIndex: faceIndex,
+                a: a,
+                b: b,
+                c: c,
+                minX: Math.min(a.x, b.x, c.x),
+                minY: Math.min(a.y, b.y, c.y),
+                minZ: Math.min(a.z, b.z, c.z),
+                maxX: Math.max(a.x, b.x, c.x),
+                maxY: Math.max(a.y, b.y, c.y),
+                maxZ: Math.max(a.z, b.z, c.z)
+            };
+        }
+
+        var triangles = [];
+        for (var i=0;i<faces.length;i++){
+            triangles.push(triAt(i, 0));  // top panel
+            triangles.push(triAt(i, 9));  // bottom panel
+        }
+
+        var maxPairs = parseInt(globals.thickClearanceMaxPairs, 10);
+        if (!isFinite(maxPairs) || maxPairs < 1) maxPairs = 120000;
+        var minDistSq = Infinity;
+        var checkedPairs = 0;
+        var truncated = false;
+
+        outer:
+        for (var i=0;i<triangles.length;i++){
+            var triA = triangles[i];
+            for (var j=i+1;j<triangles.length;j++){
+                var triB = triangles[j];
+                if (triA.faceIndex === triB.faceIndex) continue;
+                if (facePairSharesVertex(faces[triA.faceIndex], faces[triB.faceIndex])) continue;
+                if (checkedPairs >= maxPairs){
+                    truncated = true;
+                    break outer;
+                }
+                checkedPairs++;
+                var boxSq = squaredDistanceBetweenAABBs(triA, triB);
+                if (boxSq >= minDistSq) continue;
+                var dSq = triangleTriangleDistanceSq(triA.a, triA.b, triA.c, triB.a, triB.b, triB.c);
+                if (dSq < minDistSq) minDistSq = dSq;
+            }
+        }
+
+        if (checkedPairs === 0 || !isFinite(minDistSq)){
+            thickClearanceStats.valid = false;
+            thickClearanceStats.skipped = false;
+            thickClearanceStats.minDistance = 0;
+            thickClearanceStats.collision = false;
+            thickClearanceStats.checkedPairs = checkedPairs;
+            thickClearanceStats.truncated = truncated;
+            if (!silent) notifyThickClearanceStats();
+            return cloneThickClearanceStats();
+        }
+
+        var eps = parseFloat(globals.thickCollisionEpsilon);
+        if (!isFinite(eps) || eps < 0) eps = 1e-4;
+        var minDistance = Math.sqrt(Math.max(0, minDistSq));
+        thickClearanceStats.valid = true;
+        thickClearanceStats.skipped = false;
+        thickClearanceStats.minDistance = minDistance;
+        thickClearanceStats.collision = minDistance < eps;
+        thickClearanceStats.checkedPairs = checkedPairs;
+        thickClearanceStats.truncated = truncated;
+        if (!silent) notifyThickClearanceStats();
+        return cloneThickClearanceStats();
+    }
+
     function computeCurrentSheetArea(){
         if (!positions || !faces || faces.length === 0) return null;
         var area = 0;
@@ -502,10 +867,6 @@ function initModel(globals){
         thickGeometry.addAttribute('position', new THREE.BufferAttribute(thickPositions, 3));
         thickGeometry.setIndex(new THREE.BufferAttribute(thickIndices, 1));
         updateThickPanelGeometry();
-        thickGeometry.computeVertexNormals();
-        applySmoothNormals();
-        thickGeometry.computeBoundingBox();
-        thickGeometry.computeBoundingSphere();
     }
 
     function insetTriangle(p0, p1, p2, inset){
@@ -525,7 +886,23 @@ function initModel(globals){
         var v1 = new THREE.Vector2(e01.length(), 0);
         var v2 = new THREE.Vector2(e02.dot(u), e02.dot(v));
 
-        var area2 = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
+        function signedArea2(a, b, c){
+            return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        }
+
+        var area2 = signedArea2(v0, v1, v2);
+        if (Math.abs(area2) < 1e-12) return [p0, p1, p2];
+        var absArea2 = Math.abs(area2);
+
+        // Prevent impossible edge offsets on small/acute triangles.
+        var len01 = v1.clone().sub(v0).length();
+        var len12 = v2.clone().sub(v1).length();
+        var len20 = v0.clone().sub(v2).length();
+        if (len01 < 1e-10 || len12 < 1e-10 || len20 < 1e-10) return [p0, p1, p2];
+        var maxInsetScale = 0.98;
+        inset01 = Math.min(Math.max(0, inset01), maxInsetScale * absArea2 / len01);
+        inset12 = Math.min(Math.max(0, inset12), maxInsetScale * absArea2 / len12);
+        inset20 = Math.min(Math.max(0, inset20), maxInsetScale * absArea2 / len20);
         var ccw = area2 > 0;
 
         function edgeLine(a, b, inset){
@@ -558,10 +935,77 @@ function initModel(globals){
             return new THREE.Vector2(x, y);
         }
 
-        var i0 = intersect(l2, l0);
-        var i1 = intersect(l0, l1);
-        var i2 = intersect(l1, l2);
-        if (!i0 || !i1 || !i2) return [p0, p1, p2];
+        function pointInTriangle(pt, a, b, c){
+            var eps = 1e-8;
+            var v0x = c.x - a.x;
+            var v0y = c.y - a.y;
+            var v1x = b.x - a.x;
+            var v1y = b.y - a.y;
+            var v2x = pt.x - a.x;
+            var v2y = pt.y - a.y;
+            var dot00 = v0x*v0x + v0y*v0y;
+            var dot01 = v0x*v1x + v0y*v1y;
+            var dot02 = v0x*v2x + v0y*v2y;
+            var dot11 = v1x*v1x + v1y*v1y;
+            var dot12 = v1x*v2x + v1y*v2y;
+            var denom = dot00 * dot11 - dot01 * dot01;
+            if (Math.abs(denom) < 1e-12) return false;
+            var invDenom = 1 / denom;
+            var uu = (dot11 * dot02 - dot01 * dot12) * invDenom;
+            var vv = (dot00 * dot12 - dot01 * dot02) * invDenom;
+            return uu >= -eps && vv >= -eps && (uu + vv) <= 1 + eps;
+        }
+
+        function solveInset(scale){
+            var s01 = inset01 * scale;
+            var s12 = inset12 * scale;
+            var s20 = inset20 * scale;
+            var ll0 = edgeLine(v0, v1, s01);
+            var ll1 = edgeLine(v1, v2, s12);
+            var ll2 = edgeLine(v2, v0, s20);
+            if (!ll0 || !ll1 || !ll2) return null;
+            var j0 = intersect(ll2, ll0);
+            var j1 = intersect(ll0, ll1);
+            var j2 = intersect(ll1, ll2);
+            if (!j0 || !j1 || !j2) return null;
+            return [j0, j1, j2];
+        }
+
+        function validInset(cand){
+            if (!cand) return false;
+            var i0 = cand[0];
+            var i1 = cand[1];
+            var i2 = cand[2];
+            var insetArea = signedArea2(i0, i1, i2);
+            if (!isFinite(insetArea) || Math.abs(insetArea) < 1e-10) return false;
+            if (insetArea * area2 <= 0) return false;
+            return pointInTriangle(i0, v0, v1, v2) &&
+                pointInTriangle(i1, v0, v1, v2) &&
+                pointInTriangle(i2, v0, v1, v2);
+        }
+
+        var inset2D = solveInset(1);
+        if (!validInset(inset2D)){
+            // Clamp inset scale to keep the inset triangle valid/inside the source face.
+            var low = 0;
+            var high = 1;
+            var best = [v0.clone(), v1.clone(), v2.clone()];
+            for (var iter=0; iter<24; iter++){
+                var mid = 0.5 * (low + high);
+                var candidate = solveInset(mid);
+                if (validInset(candidate)){
+                    low = mid;
+                    best = candidate;
+                } else {
+                    high = mid;
+                }
+            }
+            inset2D = best;
+        }
+
+        var i0 = inset2D[0];
+        var i1 = inset2D[1];
+        var i2 = inset2D[2];
 
         var p0i = p0.clone().add(u.clone().multiplyScalar(i0.x)).add(v.clone().multiplyScalar(i0.y));
         var p1i = p0.clone().add(u.clone().multiplyScalar(i1.x)).add(v.clone().multiplyScalar(i1.y));
@@ -569,98 +1013,219 @@ function initModel(globals){
         return [p0i, p1i, p2i];
     }
 
+    function normalizePaperLinkageType(linkageType){
+        linkageType = (linkageType || "").toLowerCase();
+        if (linkageType == "bennettpaper" || linkageType == "myard" || linkageType == "bricard") return linkageType;
+        return "bennettpaper";
+    }
+
     function updateThickPanelGeometry(){
         if (!thickPositions || !faces || faces.length == 0) return;
 
         var thickness = Math.max(0, globals.panelThickness || 0);
         if (thickness <= 0) thickness = 0.0001;
-        var linkageType = (globals.thickLinkageType || "bennett").toLowerCase();
+        var linkageType = normalizePaperLinkageType(globals.thickLinkageType);
+        if (globals.thickLinkageType !== linkageType) globals.thickLinkageType = linkageType;
+        var simpleExtrusionMode = true;
         var minGap = Math.max(0, globals.minHingeGap || 0);
+        var manualBoost = parseNonNegativeNumber(globals.miuraColumnBoost);
+        if (manualBoost === null) manualBoost = 0;
+        var manualPhase = parseInt(globals.miuraColumnPhase, 10);
+        if (!isFinite(manualPhase)) manualPhase = 1;
+        manualPhase = ((manualPhase % 2) + 2) % 2;
+        var autoPhaseEnabled = globals.miuraColumnAutoPhase !== false;
+        var autoBoostEnabled = globals.thickAutoTuneBoost !== false;
+        var autoTuneEnabled = false;
+
         function edgeKey(a, b){
             return (a < b) ? (a + "_" + b) : (b + "_" + a);
         }
-        var edgeInsetByKey = buildEdgeInsetsForLinkage(thickness, linkageType, minGap);
         function assignmentForEdge(a, b){
             return edgeAssignmentByKey[edgeKey(a, b)];
         }
-        function insetForEdge(a, b){
-            return edgeInsetByKey[edgeKey(a, b)] || 0;
+
+        function applyInsetsToThickPositions(edgeInsetByKey){
+            function insetForEdge(a, b){
+                return edgeInsetByKey[edgeKey(a, b)] || 0;
+            }
+
+            for (var i=0;i<faces.length;i++){
+                var face = faces[i];
+                var ia = face[0] * 3;
+                var ib = face[1] * 3;
+                var ic = face[2] * 3;
+                var p0 = new THREE.Vector3(positions[ia], positions[ia+1], positions[ia+2]);
+                var p1 = new THREE.Vector3(positions[ib], positions[ib+1], positions[ib+2]);
+                var p2 = new THREE.Vector3(positions[ic], positions[ic+1], positions[ic+2]);
+
+                var e01 = p1.clone().sub(p0);
+                var e02 = p2.clone().sub(p0);
+                var normal = e01.clone().cross(e02);
+                if (normal.lengthSq() < 1e-12) continue;
+                normal.normalize();
+
+                var gap01 = insetForEdge(face[0], face[1]);
+                var gap12 = insetForEdge(face[1], face[2]);
+                var gap20 = insetForEdge(face[2], face[0]);
+
+                var a01 = assignmentForEdge(face[0], face[1]);
+                var a12 = assignmentForEdge(face[1], face[2]);
+                var a20 = assignmentForEdge(face[2], face[0]);
+                var topVerts;
+                var botVerts;
+                if (simpleExtrusionMode){
+                    var faceInset01 = gap01;
+                    var faceInset12 = gap12;
+                    var faceInset20 = gap20;
+                    var insetVerts = (faceInset01 > 0 || faceInset12 > 0 || faceInset20 > 0)
+                        ? insetTriangleByEdges(p0, p1, p2, faceInset01, faceInset12, faceInset20)
+                        : [p0, p1, p2];
+                    topVerts = insetVerts;
+                    botVerts = insetVerts;
+                } else {
+                    var top01 = (a01 == "V") ? gap01 : 0;
+                    var top12 = (a12 == "V") ? gap12 : 0;
+                    var top20 = (a20 == "V") ? gap20 : 0;
+                    var bot01 = (a01 == "M") ? gap01 : 0;
+                    var bot12 = (a12 == "M") ? gap12 : 0;
+                    var bot20 = (a20 == "M") ? gap20 : 0;
+
+                    topVerts = (top01 > 0 || top12 > 0 || top20 > 0)
+                        ? insetTriangleByEdges(p0, p1, p2, top01, top12, top20)
+                        : [p0, p1, p2];
+                    botVerts = (bot01 > 0 || bot12 > 0 || bot20 > 0)
+                        ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
+                        : [p0, p1, p2];
+                }
+
+                var halfOffset = normal.clone().multiplyScalar(0.5 * thickness);
+                var f0 = topVerts[0].clone().add(halfOffset);
+                var f1 = topVerts[1].clone().add(halfOffset);
+                var f2 = topVerts[2].clone().add(halfOffset);
+                var b0 = botVerts[0].clone().sub(halfOffset);
+                var b1 = botVerts[1].clone().sub(halfOffset);
+                var b2 = botVerts[2].clone().sub(halfOffset);
+
+                var base = i * 6 * 3;
+                thickPositions[base] = f0.x;
+                thickPositions[base+1] = f0.y;
+                thickPositions[base+2] = f0.z;
+                thickPositions[base+3] = f1.x;
+                thickPositions[base+4] = f1.y;
+                thickPositions[base+5] = f1.z;
+                thickPositions[base+6] = f2.x;
+                thickPositions[base+7] = f2.y;
+                thickPositions[base+8] = f2.z;
+                thickPositions[base+9] = b0.x;
+                thickPositions[base+10] = b0.y;
+                thickPositions[base+11] = b0.z;
+                thickPositions[base+12] = b1.x;
+                thickPositions[base+13] = b1.y;
+                thickPositions[base+14] = b1.z;
+                thickPositions[base+15] = b2.x;
+                thickPositions[base+16] = b2.y;
+                thickPositions[base+17] = b2.z;
+            }
+            applySmoothPositions(thickPositions, thickSmoothGroups);
         }
 
-        for (var i=0;i<faces.length;i++){
-            var face = faces[i];
-            var ia = face[0] * 3;
-            var ib = face[1] * 3;
-            var ic = face[2] * 3;
-            var p0 = new THREE.Vector3(positions[ia], positions[ia+1], positions[ia+2]);
-            var p1 = new THREE.Vector3(positions[ib], positions[ib+1], positions[ib+2]);
-            var p2 = new THREE.Vector3(positions[ic], positions[ic+1], positions[ic+2]);
-
-            var e01 = p1.clone().sub(p0);
-            var e02 = p2.clone().sub(p0);
-            var normal = e01.clone().cross(e02);
-            if (normal.lengthSq() < 1e-12) continue;
-            normal.normalize();
-
-            var gap01 = insetForEdge(face[0], face[1]);
-            var gap12 = insetForEdge(face[1], face[2]);
-            var gap20 = insetForEdge(face[2], face[0]);
-
-            var a01 = assignmentForEdge(face[0], face[1]);
-            var a12 = assignmentForEdge(face[1], face[2]);
-            var a20 = assignmentForEdge(face[2], face[0]);
-
-            // Mountain: hinge on bottom -> inset top. Valley: hinge on top -> inset bottom.
-            var top01 = (a01 == "M") ? gap01 : 0;
-            var top12 = (a12 == "M") ? gap12 : 0;
-            var top20 = (a20 == "M") ? gap20 : 0;
-            var bot01 = (a01 == "V") ? gap01 : 0;
-            var bot12 = (a12 == "V") ? gap12 : 0;
-            var bot20 = (a20 == "V") ? gap20 : 0;
-
-            var topVerts = (top01 > 0 || top12 > 0 || top20 > 0)
-                ? insetTriangleByEdges(p0, p1, p2, top01, top12, top20)
-                : [p0, p1, p2];
-            var botVerts = (bot01 > 0 || bot12 > 0 || bot20 > 0)
-                ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
-                : [p0, p1, p2];
-
-            // Keep the thick mesh centered on the solved sheet to avoid visual drift.
-            var halfOffset = normal.clone().multiplyScalar(0.5 * thickness);
-            var f0 = topVerts[0].clone().add(halfOffset);
-            var f1 = topVerts[1].clone().add(halfOffset);
-            var f2 = topVerts[2].clone().add(halfOffset);
-            var b0 = botVerts[0].clone().sub(halfOffset);
-            var b1 = botVerts[1].clone().sub(halfOffset);
-            var b2 = botVerts[2].clone().sub(halfOffset);
-
-            var base = i * 6 * 3;
-            thickPositions[base] = f0.x;
-            thickPositions[base+1] = f0.y;
-            thickPositions[base+2] = f0.z;
-            thickPositions[base+3] = f1.x;
-            thickPositions[base+4] = f1.y;
-            thickPositions[base+5] = f1.z;
-            thickPositions[base+6] = f2.x;
-            thickPositions[base+7] = f2.y;
-            thickPositions[base+8] = f2.z;
-            thickPositions[base+9] = b0.x;
-            thickPositions[base+10] = b0.y;
-            thickPositions[base+11] = b0.z;
-            thickPositions[base+12] = b1.x;
-            thickPositions[base+13] = b1.y;
-            thickPositions[base+14] = b1.z;
-            thickPositions[base+15] = b2.x;
-            thickPositions[base+16] = b2.y;
-            thickPositions[base+17] = b2.z;
+        function finalizeThickGeometry(){
+            thickGeometry.attributes.position.needsUpdate = true;
+            thickGeometry.computeVertexNormals();
+            applySmoothNormals();
+            thickGeometry.computeBoundingBox();
+            thickGeometry.computeBoundingSphere();
         }
 
-        applySmoothPositions(thickPositions, thickSmoothGroups);
-        thickGeometry.attributes.position.needsUpdate = true;
-        thickGeometry.computeVertexNormals();
-        applySmoothNormals();
-        thickGeometry.computeBoundingBox();
-        thickGeometry.computeBoundingSphere();
+        function evaluateCandidate(phase, boost){
+            var edgeInsetByKey = buildEdgeInsetsForLinkage(
+                thickness,
+                linkageType,
+                minGap,
+                {phase: phase, boost: boost}
+            );
+            applyInsetsToThickPositions(edgeInsetByKey);
+            var stats = updateThickClearanceStats(true, true);
+            return {
+                phase: phase,
+                boost: boost,
+                edgeInsetByKey: edgeInsetByKey,
+                stats: stats
+            };
+        }
+
+        function candidateScore(candidate){
+            if (!candidate || !candidate.stats || !candidate.stats.valid || candidate.stats.skipped) return -Infinity;
+            var score = candidate.stats.minDistance;
+            if (candidate.stats.collision) score -= 1e6;
+            if (candidate.stats.truncated) score -= 1e3;
+            return score;
+        }
+
+        function pickBetterCandidate(a, b){
+            if (!a) return b;
+            if (!b) return a;
+            if (candidateScore(b) > candidateScore(a) + 1e-12) return b;
+            return a;
+        }
+
+        var phaseForStart = autoPhaseEnabled && autoMiuraPhase !== null ? autoMiuraPhase : manualPhase;
+        var boostForStart = Math.max(0, manualBoost + (autoBoostEnabled ? autoMiuraBoost : 0));
+        var best = evaluateCandidate(phaseForStart, boostForStart);
+
+        if (autoTuneEnabled){
+            if (autoPhaseEnabled && boostForStart > 1e-9){
+                var phase0 = evaluateCandidate(0, boostForStart);
+                var phase1 = evaluateCandidate(1, boostForStart);
+                best = pickBetterCandidate(best, phase0);
+                best = pickBetterCandidate(best, phase1);
+            }
+
+            if (autoBoostEnabled){
+                var step = parseNonNegativeNumber(globals.thickAutoTuneBoostStep);
+                if (!(step > 0)) step = 0.005;
+                var maxBoost = parseNonNegativeNumber(globals.thickAutoTuneMaxBoost);
+                if (!(maxBoost >= 0)) maxBoost = 0.12;
+                var maxIter = parseInt(globals.thickAutoTuneMaxIterations, 10);
+                if (!isFinite(maxIter) || maxIter < 1) maxIter = 12;
+                var targetBoost = best.boost;
+                var maxAllowed = Math.max(manualBoost, maxBoost);
+                for (var iter=0; iter<maxIter; iter++){
+                    if (!best.stats || !best.stats.valid || best.stats.skipped || !best.stats.collision) break;
+                    if (targetBoost + step > maxAllowed + 1e-12) break;
+                    targetBoost += step;
+                    var candidate = evaluateCandidate(best.phase, targetBoost);
+                    if (autoPhaseEnabled){
+                        var candidatePhase0 = evaluateCandidate(0, targetBoost);
+                        var candidatePhase1 = evaluateCandidate(1, targetBoost);
+                        candidate = pickBetterCandidate(candidate, candidatePhase0);
+                        candidate = pickBetterCandidate(candidate, candidatePhase1);
+                    }
+                    best = pickBetterCandidate(best, candidate);
+                    if (candidate.stats && candidate.stats.valid && !candidate.stats.collision) {
+                        best = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (autoPhaseEnabled) autoMiuraPhase = best.phase;
+            else autoMiuraPhase = null;
+
+            if (autoBoostEnabled){
+                autoMiuraBoost = Math.max(0, best.boost - manualBoost);
+            } else {
+                autoMiuraBoost = 0;
+            }
+        } else {
+            autoMiuraPhase = null;
+            autoMiuraBoost = 0;
+        }
+
+        applyInsetsToThickPositions(best.edgeInsetByKey);
+        lastThickEdgeInsetByKey = cloneNumberMap(best.edgeInsetByKey);
+        finalizeThickGeometry();
+        updateThickClearanceStats(true, false);
     }
 
     function ensureThickGeometry(){
@@ -674,7 +1239,8 @@ function initModel(globals){
         if (!faces || faces.length == 0) return null;
         var thickness = Math.max(0, globals.panelThickness || 0);
         if (thickness <= 0) thickness = 0.0001;
-        var linkageType = (globals.thickLinkageType || "bennett").toLowerCase();
+        var linkageType = normalizePaperLinkageType(globals.thickLinkageType);
+        var simpleExtrusionMode = true;
         var minGap = Math.max(0, globals.minHingeGap || 0);
 
         function edgeKey(a, b){
@@ -683,7 +1249,19 @@ function initModel(globals){
         function assignmentForEdge(a, b){
             return edgeAssignmentByKey[edgeKey(a, b)];
         }
-        var edgeInsetByKey = buildEdgeInsetsForLinkage(thickness, linkageType, minGap);
+        var exportManualBoost = parseNonNegativeNumber(globals.miuraColumnBoost);
+        if (exportManualBoost === null) exportManualBoost = 0;
+        var exportBoost = Math.max(0, exportManualBoost + (globals.thickAutoTuneBoost !== false ? autoMiuraBoost : 0));
+        var exportPhase = parseInt(globals.miuraColumnPhase, 10);
+        if (!isFinite(exportPhase)) exportPhase = 1;
+        exportPhase = ((exportPhase % 2) + 2) % 2;
+        if (globals.miuraColumnAutoPhase !== false && autoMiuraPhase !== null) exportPhase = autoMiuraPhase;
+        var edgeInsetByKey = buildEdgeInsetsForLinkage(
+            thickness,
+            linkageType,
+            minGap,
+            {phase: exportPhase, boost: exportBoost}
+        );
         function insetForEdge(a, b){
             return edgeInsetByKey[edgeKey(a, b)] || 0;
         }
@@ -742,20 +1320,32 @@ function initModel(globals){
             var a01 = assignmentForEdge(face[0], face[1]);
             var a12 = assignmentForEdge(face[1], face[2]);
             var a20 = assignmentForEdge(face[2], face[0]);
+            var topVerts;
+            var botVerts;
+            if (simpleExtrusionMode){
+                var faceInset01 = gap01;
+                var faceInset12 = gap12;
+                var faceInset20 = gap20;
+                var insetVerts = (faceInset01 > 0 || faceInset12 > 0 || faceInset20 > 0)
+                    ? insetTriangleByEdges(p0, p1, p2, faceInset01, faceInset12, faceInset20)
+                    : [p0, p1, p2];
+                topVerts = insetVerts;
+                botVerts = insetVerts;
+            } else {
+                var top01 = (a01 == "V") ? gap01 : 0;
+                var top12 = (a12 == "V") ? gap12 : 0;
+                var top20 = (a20 == "V") ? gap20 : 0;
+                var bot01 = (a01 == "M") ? gap01 : 0;
+                var bot12 = (a12 == "M") ? gap12 : 0;
+                var bot20 = (a20 == "M") ? gap20 : 0;
 
-            var top01 = (a01 == "M") ? gap01 : 0;
-            var top12 = (a12 == "M") ? gap12 : 0;
-            var top20 = (a20 == "M") ? gap20 : 0;
-            var bot01 = (a01 == "V") ? gap01 : 0;
-            var bot12 = (a12 == "V") ? gap12 : 0;
-            var bot20 = (a20 == "V") ? gap20 : 0;
-
-            var topVerts = (top01 > 0 || top12 > 0 || top20 > 0)
-                ? insetTriangleByEdges(p0, p1, p2, top01, top12, top20)
-                : [p0, p1, p2];
-            var botVerts = (bot01 > 0 || bot12 > 0 || bot20 > 0)
-                ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
-                : [p0, p1, p2];
+                topVerts = (top01 > 0 || top12 > 0 || top20 > 0)
+                    ? insetTriangleByEdges(p0, p1, p2, top01, top12, top20)
+                    : [p0, p1, p2];
+                botVerts = (bot01 > 0 || bot12 > 0 || bot20 > 0)
+                    ? insetTriangleByEdges(p0, p1, p2, bot01, bot12, bot20)
+                    : [p0, p1, p2];
+            }
 
             var halfOffset = normal.clone().multiplyScalar(0.5 * thickness);
             var f0 = topVerts[0].clone().add(halfOffset);
@@ -795,47 +1385,38 @@ function initModel(globals){
     }
 
     function buildEdgeInsetsForLinkage(thickness, linkageType, minGap){
+        linkageType = normalizePaperLinkageType(linkageType);
         var insets = {};
         var vertexCreases = [];
         for (var i=0;i<nodes.length;i++) vertexCreases.push([]);
 
-        for (var i=0;i<edges.length;i++){
-            var edge = edges[i];
-            var a = edge.nodes[0].getIndex();
-            var b = edge.nodes[1].getIndex();
-            var key = (a < b) ? (a + "_" + b) : (b + "_" + a);
-            var assignment = edgeAssignmentByKey[key];
-            if (edgeIsPatternByKey[key] === false) continue;
-            if (assignment != "M" && assignment != "V") continue;
-            vertexCreases[a].push({edgeIndex:i, other:b});
-            vertexCreases[b].push({edgeIndex:i, other:a});
+        function edgeKey(a, b){
+            return (a < b) ? (a + "_" + b) : (b + "_" + a);
         }
 
         function getAngleForEdge(centerIndex, otherIndex){
             var center = nodes[centerIndex].getOriginalPosition();
             var other = nodes[otherIndex].getOriginalPosition();
-            var dx = other.x - center.x;
-            var dz = other.z - center.z;
-            return Math.atan2(dz, dx);
+            return Math.atan2(other.z - center.z, other.x - center.x);
         }
 
         function gapsForCount(count){
             var gaps = [];
-            if (linkageType == "myard" && count == 5){
-                for (var i=0;i<5;i++) gaps.push(thickness);
-                gaps[2] = 0; // a34 = 0
-                return gaps;
-            }
-            if (linkageType == "bricard" && count == 6){
-                for (var i=0;i<6;i++) gaps.push(thickness);
-                return gaps;
-            }
-            if (linkageType == "bennett" && count == 4){
-                for (var i=0;i<4;i++) gaps.push(thickness);
-                return gaps;
-            }
             for (var i=0;i<count;i++) gaps.push(thickness);
+            if (linkageType == "myard" && count == 5) gaps[2] = 0; // a34 = 0
             return gaps;
+        }
+
+        for (var i=0;i<edges.length;i++){
+            var edge = edges[i];
+            var a = edge.nodes[0].getIndex();
+            var b = edge.nodes[1].getIndex();
+            var key = edgeKey(a, b);
+            var assignment = edgeAssignmentByKey[key];
+            if (edgeIsPatternByKey[key] === false) continue;
+            if (!isCreaseLikeAssignment(assignment, key)) continue;
+            vertexCreases[a].push({edgeIndex: i, other: b});
+            vertexCreases[b].push({edgeIndex: i, other: a});
         }
 
         var edgeInsetAtVertex = {};
@@ -845,6 +1426,46 @@ function initModel(globals){
             creases.sort(function(a, b){
                 return getAngleForEdge(v, a.other) - getAngleForEdge(v, b.other);
             });
+
+            if (linkageType == "bennettpaper" && creases.length == 4){
+                var sector = [];
+                for (var i=0;i<4;i++){
+                    var a0 = getAngleForEdge(v, creases[i].other);
+                    var a1 = getAngleForEdge(v, creases[(i+1)%4].other);
+                    while (a1 <= a0) a1 += Math.PI * 2;
+                    sector.push(a1 - a0);
+                }
+                var eps = 1e-8;
+                var s0 = Math.abs(Math.sin(sector[0]));
+                var s1 = Math.abs(Math.sin(sector[1]));
+                var s2 = Math.abs(Math.sin(sector[2]));
+                var s3 = Math.abs(Math.sin(sector[3]));
+                var ratios = [];
+                if (s1 > eps) ratios.push(s0 / s1);
+                if (s3 > eps) ratios.push(s2 / s3);
+                var ratio = 1;
+                if (ratios.length > 0){
+                    var sum = 0;
+                    for (var i=0;i<ratios.length;i++) sum += ratios[i];
+                    ratio = sum / ratios.length;
+                }
+                if (!isFinite(ratio) || ratio <= eps) ratio = 1;
+                ratio = Math.max(0.05, Math.min(20, ratio));
+
+                var baseInset = Math.max(minGap, thickness);
+                var insetEven = ratio >= 1 ? baseInset * ratio : baseInset;
+                var insetOdd = ratio >= 1 ? baseInset : baseInset / ratio;
+
+                for (var i=0;i<4;i++){
+                    var edge = edges[creases[i].edgeIndex];
+                    var a = edge.nodes[0].getIndex();
+                    var b = edge.nodes[1].getIndex();
+                    var key = edgeKey(a, b);
+                    edgeInsetAtVertex[v + "|" + key] = (i % 2 === 0) ? insetEven : insetOdd;
+                }
+                continue;
+            }
+
             var gaps = gapsForCount(creases.length);
             for (var i=0;i<creases.length;i++){
                 var prev = (i - 1 + creases.length) % creases.length;
@@ -852,9 +1473,8 @@ function initModel(globals){
                 var edge = edges[creases[i].edgeIndex];
                 var a = edge.nodes[0].getIndex();
                 var b = edge.nodes[1].getIndex();
-                var key = (a < b) ? (a + "_" + b) : (b + "_" + a);
-                var vKey = v + "|" + key;
-                edgeInsetAtVertex[vKey] = inset;
+                var key = edgeKey(a, b);
+                edgeInsetAtVertex[v + "|" + key] = inset;
             }
         }
 
@@ -862,17 +1482,30 @@ function initModel(globals){
             var edge = edges[i];
             var a = edge.nodes[0].getIndex();
             var b = edge.nodes[1].getIndex();
-            var key = (a < b) ? (a + "_" + b) : (b + "_" + a);
+            var key = edgeKey(a, b);
             var assignment = edgeAssignmentByKey[key];
             if (edgeIsPatternByKey[key] === false) continue;
-            if (assignment != "M" && assignment != "V") continue;
+            if (!isCreaseLikeAssignment(assignment, key)) continue;
+
             var aInset = edgeInsetAtVertex[a + "|" + key] || 0;
             var bInset = edgeInsetAtVertex[b + "|" + key] || 0;
-            insets[key] = Math.max(aInset, bInset, thickness * 0.5, minGap);
+            var inset = Math.max(aInset, bInset, thickness * 0.5, minGap);
+
+            var runtimeScaleOverride = mapNumberForEdgeKey(globals.thickEdgeGapScaleOverrides, key);
+            var scaleOverride = edgeGapScaleByKey[key];
+            if (runtimeScaleOverride !== null) scaleOverride = runtimeScaleOverride;
+            if (isFinite(scaleOverride) && scaleOverride >= 0) inset *= scaleOverride;
+
+            var runtimeAbsoluteOverride = mapNumberForEdgeKey(globals.thickEdgeGapOverrides, key);
+            var absoluteOverride = edgeGapOverrideByKey[key];
+            if (runtimeAbsoluteOverride !== null) absoluteOverride = runtimeAbsoluteOverride;
+            if (isFinite(absoluteOverride) && absoluteOverride >= 0) inset = Math.max(inset, absoluteOverride);
+
+            insets[key] = inset;
         }
+
         return insets;
     }
-
     function getGeometry(){
         return geometry;
     }
@@ -982,10 +1615,23 @@ function initModel(globals){
         thinAreaStats.reference = 0;
         thinAreaStats.delta = 0;
         thinAreaStats.deltaPercent = 0;
+        thickClearanceStats.valid = false;
+        thickClearanceStats.skipped = false;
+        thickClearanceStats.minDistance = 0;
+        thickClearanceStats.collision = false;
+        thickClearanceStats.checkedPairs = 0;
+        thickClearanceStats.truncated = false;
+        thickClearanceFrameCountdown = 0;
         creaseParams = nextCreaseParams;
         var _edges = fold.edges_vertices;
         edgeAssignmentByKey = {};
         edgeIsPatternByKey = {};
+        edgeFoldAngleByKey = {};
+        edgeGapOverrideByKey = {};
+        edgeGapScaleByKey = {};
+        lastThickEdgeInsetByKey = {};
+        autoMiuraPhase = null;
+        autoMiuraBoost = 0;
         for (var i=0;i<fold.edges_vertices.length;i++){
             var edge = fold.edges_vertices[i];
             var a = edge[0];
@@ -994,6 +1640,15 @@ function initModel(globals){
             edgeAssignmentByKey[key] = fold.edges_assignment[i];
             if (fold.edges_isPattern) edgeIsPatternByKey[key] = fold.edges_isPattern[i] !== false;
             else edgeIsPatternByKey[key] = true;
+            if (fold.edges_foldAngle && i < fold.edges_foldAngle.length){
+                var foldAngle = fold.edges_foldAngle[i];
+                if (isFinite(foldAngle)){
+                    var current = edgeFoldAngleByKey[key];
+                    if (!isFinite(current) || Math.abs(foldAngle) > Math.abs(current)){
+                        edgeFoldAngleByKey[key] = foldAngle;
+                    }
+                }
+            }
         }
 
         var _vertices = [];
@@ -1122,6 +1777,9 @@ function initModel(globals){
             edges[i].recalcOriginalLength();
         }
 
+        addIndexedGapOverrides(fold.edges_thickGap, edgeGapOverrideByKey, scale);
+        addIndexedGapOverrides(fold.edges_thickGapScale, edgeGapScaleByKey, 1);
+
         updateEdgeVisibility();
         updateMeshVisibility();
         buildThickGeometry();
@@ -1178,6 +1836,7 @@ function initModel(globals){
         getCreases: getCreases,
         getGeometry: getGeometry,//for save stl
         getThickGeometry: function(){ return thickGeometry; },
+        getThickEdgeInsetMap: function(){ return cloneNumberMap(lastThickEdgeInsetByKey); },
         ensureThickGeometry: ensureThickGeometry,
         buildThickExportGeometry: buildThickExportGeometry,
         getPositionsArray: getPositionsArray,
@@ -1195,6 +1854,8 @@ function initModel(globals){
         updateThickPanelGeometry: updateThickPanelGeometry,
         resetThinAreaReference: resetThinAreaReference,
         getThinAreaStats: cloneThinAreaStats,
+        getThickClearanceStats: cloneThickClearanceStats,
+        getThickAutoTuneState: cloneThickAutoTuneState,
 
         getDimensions: getDimensions//for save stl
     }

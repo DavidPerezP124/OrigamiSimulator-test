@@ -1248,10 +1248,32 @@
                     <span class="label-slider">Min Hinge Gap : </span><div class="flat-slider ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content"></div>
                     <input value="" placeholder="" class="float form-control" type="text">
                 </div>
+                <div class="sliderInput paddingBottom" id="miuraColumnBoost">
+                    <span class="label-slider">Miura Column Boost : </span><div class="flat-slider ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content"></div>
+                    <input value="" placeholder="" class="float form-control" type="text">
+                </div>
+                <div class="sliderInput paddingBottom" id="miuraColumnPhase">
+                    <span class="label-slider">Miura Column Phase : </span><div class="flat-slider ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content"></div>
+                    <input value="" placeholder="" class="float form-control int" type="text">
+                </div>
+                <div class="doubleIndent">
+                    <label class="checkbox" for="thickAutoTuneEnabled">
+                        <input id="thickAutoTuneEnabled" data-toggle="checkbox" class="custom-checkbox" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                        Enable thick auto tune
+                    </label>
+                    <label class="checkbox" for="miuraColumnAutoPhase">
+                        <input id="miuraColumnAutoPhase" data-toggle="checkbox" class="custom-checkbox" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                        Auto-select Miura phase
+                    </label>
+                    <label class="checkbox" for="thickAutoTuneBoost">
+                        <input id="thickAutoTuneBoost" data-toggle="checkbox" class="custom-checkbox" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                        Auto-increase boost on collision
+                    </label>
+                </div>
                 <div class="form-group">
                     <label for="thickLinkageType">Linkage Type</label>
                     <select id="thickLinkageType" class="form-control">
-                        <option value="bennett">Bennett (4-crease)</option>
+                        <option value="bennettpaper">Bennett Paper (4-crease)</option>
                         <option value="myard">Myard (5-crease)</option>
                         <option value="bricard">Bricard (6-crease)</option>
                     </select>
@@ -1285,6 +1307,16 @@
             <label>Area reference: <span id="thinAreaReference">--</span></label>
             <br/>
             <label>Area delta: <span id="thinAreaDelta">--</span> (<span id="thinAreaDeltaPercent">--</span>)</label>
+            <br/>
+            <label>Thick min clearance: <span id="thickClearanceMin">--</span></label>
+            <br/>
+            <label>Thick collision: <span id="thickCollisionState">--</span></label>
+            <br/>
+            <label>Pairs checked: <span id="thickClearancePairs">--</span></label>
+            <br/>
+            <label>Miura phase used: <span id="thickMiuraPhaseState">--</span></label>
+            <br/>
+            <label>Miura auto boost: <span id="thickMiuraBoostState">--</span></label>
         </div>
     </div><br/>
 
@@ -1595,6 +1627,23 @@
                     <input id="doublesidedSTL" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
                     Double Sided
                 </label>
+                <label class="bigLabel checkbox" for="snapExportEnabledSTL">
+                    <input id="snapExportEnabledSTL" data-toggle="checkbox" class="custom-checkbox layersSelector snapExportEnabled" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Snap-Layer Panel Export
+                </label>
+                <div class="doubleIndent smallTxt">
+                    <span>Plate Thickness:</span>
+                    <input value="" placeholder="" class="float snapPlateThickness form-control" type="text"><br/>
+                    <span>Interlayer Gap:</span>
+                    <input value="" placeholder="" class="float snapInterlayerGap form-control" type="text"><br/>
+                    <span>Pin Radius:</span>
+                    <input value="" placeholder="" class="float snapPinRadius form-control" type="text"><br/>
+                    <span>Pin Height:</span>
+                    <input value="" placeholder="" class="float snapPinHeight form-control" type="text"><br/>
+                    <span>Hole Clearance:</span>
+                    <input value="" placeholder="" class="float snapPinClearance form-control" type="text"><br/>
+                    <span>0 uses automatic value based on panel thickness.</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="doSTLsave" type="button" class="actionButton btn btn-success" data-dismiss="modal">Save</button>
@@ -1623,6 +1672,23 @@
                     <input id="doublesidedOBJ" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
                     Double Sided
                 </label>
+                <label class="bigLabel checkbox" for="snapExportEnabledOBJ">
+                    <input id="snapExportEnabledOBJ" data-toggle="checkbox" class="custom-checkbox layersSelector snapExportEnabled" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Snap-Layer Panel Export
+                </label>
+                <div class="doubleIndent smallTxt">
+                    <span>Plate Thickness:</span>
+                    <input value="" placeholder="" class="float snapPlateThickness form-control" type="text"><br/>
+                    <span>Interlayer Gap:</span>
+                    <input value="" placeholder="" class="float snapInterlayerGap form-control" type="text"><br/>
+                    <span>Pin Radius:</span>
+                    <input value="" placeholder="" class="float snapPinRadius form-control" type="text"><br/>
+                    <span>Pin Height:</span>
+                    <input value="" placeholder="" class="float snapPinHeight form-control" type="text"><br/>
+                    <span>Hole Clearance:</span>
+                    <input value="" placeholder="" class="float snapPinClearance form-control" type="text"><br/>
+                    <span>0 uses automatic value based on panel thickness.</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="doOBJsave" type="button" class="actionButton btn btn-success" data-dismiss="modal">Save</button>
