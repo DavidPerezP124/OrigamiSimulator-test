@@ -558,6 +558,13 @@ function initModel(globals){
         thicknessMesh.geometry.attributes.position.needsUpdate = true;
         thicknessMesh.geometry.computeVertexNormals();
         thicknessMesh.geometry.attributes.normal.needsUpdate = true;
+        //Mesh.raycast rejects against the cached bounding sphere before it tests any
+        //triangle, and the cache is not invalidated by marking positions dirty. now that
+        //picking hit-tests this mesh, a stale sphere would make plates unselectable as soon
+        //as folding moved them outside it. the box is cleared for the same reason - anything
+        //reading geometry.boundingBox would otherwise see the shape from an earlier frame
+        thicknessMesh.geometry.computeBoundingSphere();
+        thicknessMesh.geometry.boundingBox = null;
     }
 
     function updateThicknessView(){

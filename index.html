@@ -654,20 +654,32 @@
         vec3 contactForce(vec3 p, vec3 vel, vec3 a, vec3 b, vec3 c, vec3 va, vec3 vb, vec3 vc, vec3 normal, out vec3 bary){
             bary = vec3(0.0);
             float dist = dot(p-a, normal);
-            //where the node sat relative to this plate before the last step. the face mean
-            //velocity stands in for the contact point's here because the barycentric weights
-            //are not known yet; it is refined below once they are
-            float prevDistApprox = dist - dot(vel - (va+vb+vc)/3.0, normal)*u_dt;
-            //a step can carry a node clean through the whole contact band - out one side to
+            //motion of the node relative to the plate over the last step, so a plate sweeping
+            //across a still node is treated the same as a node crossing a still plate. the
+            //face mean stands in for the contact point's velocity because the barycentric
+            //weights are not known yet; it is refined below once they are
+            vec3 dRel = (vel - (va+vb+vc)/3.0)*u_dt;
+            float prevDist = dist - dot(dRel, normal);
+            //a step can carry the pair clean through the whole contact band - out one side to
             //out the other - and testing only the endpoint would let that tunnel silently.
             //keep any step whose endpoints straddle the plate, however far out it landed
-            bool crossed = (prevDistApprox >= 0.0) != (dist >= 0.0);
+            bool crossed = (prevDist >= 0.0) != (dist >= 0.0);
             if (abs(dist) >= u_contactThickness && !crossed) return vec3(0.0);
 
-            //barycentric coords of the node projected onto the face plane
+            //where to test containment. for a step that crossed the plate, use the point
+            //where it crossed rather than where it ended: a node can enter over the triangle
+            //and leave past one of its edges within a single step, and testing the endpoint
+            //alone would call that a miss
+            vec3 contactPoint = p-dist*normal;
+            if (crossed){
+                float span = prevDist-dist;
+                if (abs(span) > 0.000001) contactPoint = (p-dRel) + (prevDist/span)*dRel;
+            }
+
+            //barycentric coords of the contact point on the face plane
             vec3 v0 = b-a;
             vec3 v1 = c-a;
-            vec3 v2 = (p-dist*normal)-a;
+            vec3 v2 = contactPoint-a;
             float d00 = dot(v0, v0);
             float d01 = dot(v0, v1);
             float d11 = dot(v1, v1);
@@ -720,18 +732,14 @@
                 //skip faces this node belongs to
                 if (abs(faceVerts[0]-myIndex) < 0.1 || abs(faceVerts[1]-myIndex) < 0.1 || abs(faceVerts[2]-myIndex) < 0.1) continue;
 
+                //no cheap distance reject here: whether the pair swept across the plate
+                //depends on the plate's motion as much as the node's, and a reject built from
+                //the node velocity alone lets a moving plate cross a still node unnoticed.
+                //deciding it needs the face velocities anyway, so contactForce does it
                 vec3 a = getPosition(faceVerts[0]);
-                vec3 normal = getFromArray(float(j), u_textureDimFaces, u_normals).xyz;
-                //cheap reject before fetching the rest of the face, but it has to keep steps
-                //that swept across the plate and out the far side, same as contactForce does.
-                //the plate's own motion is not known yet here, so this uses the node velocity
-                //alone - it over-keeps rather than under-keeps, and contactForce re-tests
-                float d = dot(position-a, normal);
-                float dPrev = d - dot(velocity, normal)*u_dt;
-                if (abs(d) >= u_contactThickness && abs(dPrev) >= u_contactThickness &&
-                    (d >= 0.0) == (dPrev >= 0.0)) continue;
                 vec3 b = getPosition(faceVerts[1]);
                 vec3 c = getPosition(faceVerts[2]);
+                vec3 normal = getFromArray(float(j), u_textureDimFaces, u_normals).xyz;
 
                 force += contactForce(position, velocity, a, b, c,
                     getVelocity(faceVerts[0]), getVelocity(faceVerts[1]), getVelocity(faceVerts[2]), normal, bary);
