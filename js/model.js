@@ -255,11 +255,27 @@ function initModel(globals){
             return a;
         }
 
-        var interiorEdge = {};
-        var numInteriorSlots = 0;
+        var noWall = {};//edge slots that must not get a side wall
+        var numSkippedWalls = 0;
+        function skipWall(faceIndex, slot){
+            if (noWall[faceIndex*3+slot]) return;
+            noWall[faceIndex*3+slot] = true;
+            numSkippedWalls++;
+        }
+        //the slot of the edge running between two nodes of a face, or -1
+        function edgeSlot(faceIndex, n1, n2){
+            var face = faces[faceIndex];
+            if (!face) return -1;
+            for (var j=0;j<3;j++){
+                var a = face[j], b = face[(j+1)%3];
+                if ((a == n1 && b == n2) || (a == n2 && b == n1)) return j;
+            }
+            return -1;
+        }
+
         for (var i=0;i<creases.length;i++){
             var crease = creases[i];
-            if (crease.type != 0) continue;//hinges fold, their slabs need closed ends
+            if (crease.type != 0) continue;//hinges are handled with the connectors below
             var n1 = crease.edge.nodes[0].getIndex();
             var n2 = crease.edge.nodes[1].getIndex();
             var creaseFaces = [crease.face1Index, crease.face2Index];
@@ -267,18 +283,8 @@ function initModel(globals){
                 parent[find(creaseFaces[0])] = find(creaseFaces[1]);
             }
             for (var s=0;s<2;s++){
-                var face = faces[creaseFaces[s]];
-                if (!face) continue;
-                for (var j=0;j<3;j++){
-                    var a = face[j];
-                    var b = face[(j+1)%3];
-                    if ((a == n1 && b == n2) || (a == n2 && b == n1)){
-                        if (!interiorEdge[creaseFaces[s]*3+j]){
-                            interiorEdge[creaseFaces[s]*3+j] = true;
-                            numInteriorSlots++;
-                        }
-                    }
-                }
+                var slot = edgeSlot(creaseFaces[s], n1, n2);
+                if (slot >= 0) skipWall(creaseFaces[s], slot);
             }
         }
 
@@ -311,10 +317,16 @@ function initModel(globals){
                 var cg1 = faces[g].indexOf(n1), cg2 = faces[g].indexOf(n2);
                 if (cf1 < 0 || cf2 < 0 || cg1 < 0 || cg2 < 0) continue;
                 connectors.push([6*f+cf1, 6*f+cf2, 6*g+cg1, 6*g+cg2]);
+                //the connector's own walls close both slabs here. leaving the slab end walls
+                //in as well would put three triangles on the shared edge - slab face, slab
+                //wall and connector ribbon - making the exported solid non-manifold
+                var sf = edgeSlot(f, n1, n2), sg = edgeSlot(g, n1, n2);
+                if (sf >= 0) skipWall(f, sf);
+                if (sg >= 0) skipWall(g, sg);
             }
         }
 
-        var numWalls = numFaces*3 - numInteriorSlots;
+        var numWalls = numFaces*3 - numSkippedWalls;
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
         //top + bottom + 2 triangles per wall + 8 triangles per connector box
         var thickIndices = new IndexArrayType((numFaces*2 + numWalls*2 + connectors.length*8)*3);
@@ -329,7 +341,7 @@ function initModel(globals){
             thickIndices[index++] = bottom+2;
             thickIndices[index++] = bottom+1;
             for (var j=0;j<3;j++){//outward-facing side walls
-                if (interiorEdge[3*i+j]) continue;
+                if (noWall[3*i+j]) continue;
                 var k = (j+1)%3;
                 thickIndices[index++] = top+j;
                 thickIndices[index++] = bottom+j;
