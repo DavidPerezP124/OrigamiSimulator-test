@@ -293,9 +293,31 @@ function initModel(globals){
         slabPanelNormals = new Float32Array(slabNumPanels*3);
         slabPanelMinDot = new Float32Array(slabNumPanels);
 
+        //offset panels sit at different heights in the stack, so the two plates of a hinge no
+        //longer meet at the crease. collect the corner slots on each side so a connector - the
+        //"extension" of the offset panel technique - can be emitted to bridge them, otherwise
+        //the model renders as loose floating plates and exports as a non-solid. only built
+        //when a layer solution exists, which is exactly when the offsets are ever applied
+        var connectors = [];
+        if (globals.thickness && globals.thickness.getLayerSolution()){
+            for (var i=0;i<creases.length;i++){
+                var crease = creases[i];
+                if (crease.type == 0) continue;//facet creases stay coplanar within a panel
+                var f = crease.face1Index, g = crease.face2Index;
+                if (!faces[f] || !faces[g]) continue;
+                var n1 = crease.edge.nodes[0].getIndex();
+                var n2 = crease.edge.nodes[1].getIndex();
+                var cf1 = faces[f].indexOf(n1), cf2 = faces[f].indexOf(n2);
+                var cg1 = faces[g].indexOf(n1), cg2 = faces[g].indexOf(n2);
+                if (cf1 < 0 || cf2 < 0 || cg1 < 0 || cg2 < 0) continue;
+                connectors.push([6*f+cf1, 6*f+cf2, 6*g+cg1, 6*g+cg2]);
+            }
+        }
+
         var numWalls = numFaces*3 - numInteriorSlots;
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
-        var thickIndices = new IndexArrayType((numFaces*2 + numWalls*2)*3);//top + bottom + 2 triangles per wall
+        //top + bottom + 2 triangles per wall + 8 triangles per connector box
+        var thickIndices = new IndexArrayType((numFaces*2 + numWalls*2 + connectors.length*8)*3);
         var index = 0;
         for (var i=0;i<numFaces;i++){
             var top = 6*i;
@@ -315,6 +337,29 @@ function initModel(globals){
                 thickIndices[index++] = top+j;
                 thickIndices[index++] = bottom+k;
                 thickIndices[index++] = top+k;
+            }
+        }
+
+        //connector boxes: bridge the two plates of each hinge across their stack offset. the
+        //four corners on each side (top/bottom at each end of the crease) form a box, closed
+        //by a top ribbon, a bottom ribbon and a cap at each end of the crease line
+        for (var i=0;i<connectors.length;i++){
+            var f1 = connectors[i][0], f2 = connectors[i][1];//face1 top slots at crease nodes 1,2
+            var g1 = connectors[i][2], g2 = connectors[i][3];//face2 top slots at the same nodes
+            var quads = [
+                [f1, f2, g2, g1],//top ribbon
+                [f1+3, g1+3, g2+3, f2+3],//bottom ribbon, reversed so it faces out
+                [f1, g1, g1+3, f1+3],//cap at crease node 1
+                [f2, f2+3, g2+3, g2]//cap at crease node 2, reversed
+            ];
+            for (var q=0;q<4;q++){
+                var quad = quads[q];
+                thickIndices[index++] = quad[0];
+                thickIndices[index++] = quad[1];
+                thickIndices[index++] = quad[2];
+                thickIndices[index++] = quad[0];
+                thickIndices[index++] = quad[2];
+                thickIndices[index++] = quad[3];
             }
         }
 
@@ -405,32 +450,42 @@ function initModel(globals){
             if (!(slabPanelMinDot[i] > 0.5)) slabPanelMinDot[i] = 0.5;
         }
 
+        //offset panel construction: each panel's plate is shifted off the midsurface by its
+        //own height in the folded stack, so panels no longer share a hinge centerline and can
+        //close fully flat. zero when the pattern has no orderable flat-folded state, which
+        //leaves the plates centered on the midsurface and the fold angle limits in force
+        var offsetPanels = globals.thickness ? globals.thickness.offsetPanelsActive() : false;
+
         for (var i=0;i<numFaces;i++){
             var a = faces[i][0], b = faces[i][1], c = faces[i][2];
             var panel = slabPanel[i];
             var p = 3*panel;
-            var scale = halfThickness/slabPanelMinDot[panel];
-            var nx = slabPanelNormals[p]*scale, ny = slabPanelNormals[p+1]*scale, nz = slabPanelNormals[p+2]*scale;
-            if (nx == 0 && ny == 0 && nz == 0){//panel normals cancelled, fall back to this face
+            var ux = slabPanelNormals[p], uy = slabPanelNormals[p+1], uz = slabPanelNormals[p+2];//unit
+            if (ux == 0 && uy == 0 && uz == 0){//panel normals cancelled, fall back to this face
                 var fallback = Math.sqrt(slabNormals[3*i]*slabNormals[3*i] +
                     slabNormals[3*i+1]*slabNormals[3*i+1] + slabNormals[3*i+2]*slabNormals[3*i+2]);
                 if (fallback > 0){
-                    nx = slabNormals[3*i]/fallback*halfThickness;
-                    ny = slabNormals[3*i+1]/fallback*halfThickness;
-                    nz = slabNormals[3*i+2]/fallback*halfThickness;
+                    ux = slabNormals[3*i]/fallback;
+                    uy = slabNormals[3*i+1]/fallback;
+                    uz = slabNormals[3*i+2]/fallback;
                 }
             }
+            var scale = halfThickness/slabPanelMinDot[panel];
+            var nx = ux*scale, ny = uy*scale, nz = uz*scale;
+            //pattern units -> render units, along the same normal the plate is extruded on
+            var shift = offsetPanels ? globals.thickness.getFaceOffset(i)*globals.scale : 0;
+            var sx = ux*shift, sy = uy*shift, sz = uz*shift;
             var corners = [a, b, c];
             for (var j=0;j<3;j++){
                 var v = corners[j];
                 var top = 3*(6*i+j);
                 var bottom = 3*(6*i+j+3);
-                thickPositions[top] = positions[3*v] + nx;
-                thickPositions[top+1] = positions[3*v+1] + ny;
-                thickPositions[top+2] = positions[3*v+2] + nz;
-                thickPositions[bottom] = positions[3*v] - nx;
-                thickPositions[bottom+1] = positions[3*v+1] - ny;
-                thickPositions[bottom+2] = positions[3*v+2] - nz;
+                thickPositions[top] = positions[3*v] + sx + nx;
+                thickPositions[top+1] = positions[3*v+1] + sy + ny;
+                thickPositions[top+2] = positions[3*v+2] + sz + nz;
+                thickPositions[bottom] = positions[3*v] + sx - nx;
+                thickPositions[bottom+1] = positions[3*v+1] + sy - ny;
+                thickPositions[bottom+2] = positions[3*v+2] + sz - nz;
             }
         }
 
@@ -687,9 +742,17 @@ function initModel(globals){
         return creases;
     }
 
+    //true when an export would use the thick slab geometry rather than the midsurface. shared
+    //by makeSaveGEO and getDimensions so the reported size cannot drift from the saved file
+    function exportUsesThickness(){
+        if (globals.thickenModel && globals.thickenOffset > 0) return false;//legacy thickening wins
+        return globals.simulateThickness && globals.materialThickness > 0;
+    }
+
     function getDimensions(){
-        geometry.computeBoundingBox();
-        return geometry.boundingBox.max.clone().sub(geometry.boundingBox.min);
+        var source = exportUsesThickness() ? getThicknessGeometry() : geometry;
+        source.computeBoundingBox();
+        return source.boundingBox.max.clone().sub(source.boundingBox.min);
     }
 
     return {
@@ -704,6 +767,7 @@ function initModel(globals){
         getCreases: getCreases,
         getGeometry: getGeometry,//for save stl
         getThicknessGeometry: getThicknessGeometry,//for save stl with thickness simulation on
+        exportUsesThickness: exportUsesThickness,//which of the two the export will pick
         getPositionsArray: getPositionsArray,
         getColorsArray: getColorsArray,
         getMesh: getMesh,

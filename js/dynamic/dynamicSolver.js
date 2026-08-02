@@ -156,9 +156,14 @@ function initDynamicSolver(globals){
         gpuMath.step("updateCreaseGeo", ["u_lastPosition", "u_originalPosition", "u_creaseMeta2"], "u_creaseGeo");
 
         //collision solver: fold node vs plate contact forces into a copy of the external
-        //force field, then feed that to the integration step in place of u_externalForces
+        //force field, then feed that to the integration step in place of u_externalForces.
+        //not used under the offset panel construction: the pass measures separation between
+        //midsurfaces, and offset panels deliberately fold their midsurfaces onto one plane
+        //while the plates themselves are held apart by their stack offsets. running it there
+        //fires contact everywhere, splays the stack and stops the model reaching a full fold
+        var offsetPanels = globals.thickness ? globals.thickness.offsetPanelsActive() : false;
         var contactEnabled = contactProgramReady && globals.simulateThickness && globals.collisionsEnabled &&
-            globals.materialThickness > 0;
+            globals.materialThickness > 0 && !offsetPanels;
         if (contactEnabled){
             gpuMath.setProgram("contactCalc");
             gpuMath.setSize(textureDim, textureDim);

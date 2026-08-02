@@ -97,24 +97,44 @@ limits prevent the configurations where X-crossings typically arise.</li>
 substep of velocity history, so a slow sustained squeeze-through is not strictly impossible.</li>
 </ul>
 <p>
-In the thick view each triangle is drawn as an independent square-edged slab extruded about the folded midsurface, so plates
-keep their full thickness at every fold angle.  <b>Every hinge axis lies on the midsurface</b> - plates rotate about their
-shared centerline - and the plates are not trimmed back near the hinge.  Two slabs rotating about a shared centerline
-necessarily overlap in a thin wedge along the crease line, growing as the fold tightens, so that wedge appears in the thick
-view and in exported solids.
+<b>Offset panels.</b>  Whenever the layer ordering resolves, the simulator uses the <i>offset panel technique</i> instead of
+relying on the fold angle limits: each panel's plate is shifted off the midsurface along its own normal by
+(<i>layer</i>&nbsp;+&nbsp;&frac12;)&nbsp;&times;&nbsp;<i>thickness</i>&nbsp;&times;&nbsp;<i>parity</i>, placing it at its own
+height in the folded stack.  Because the plates no longer share a hinge centerline, they close <b>fully flat</b> without
+touching, so the angle limits above are switched off in this mode and creases reach a true 180&deg;.  Connector geometry
+bridges the plates of each hinge across their offset - the "extensions" of the technique.  Offset panels preserve the folding
+kinematics of the zero-thickness pattern, which is what lets the compliant solver keep driving the midsurface mesh unchanged.
 </p>
 <p>
-This is a deliberate simplification, and it is worth being explicit that it does not match the construction the fold angle
-limit is taken from: Tachi's tapered-panel result assumes the plates <i>are</i> trimmed back at each hinge, and we use the
-angle limit as a stand-in for that trimming.  The two ways to make the geometry consistent are (a) tapered panels -
-convex-clip every slab against its hinges' dihedral bisector planes, which needs variable output topology; simply displacing
-the six slab vertices toward the bisector is not equivalent and measurably introduces new interpenetrations where two
-trimmed edges share a corner - or (b) axis shift / offset panels, moving each hinge axis onto a plate surface as thick-panel
-hardware does, which lets plates close fully flat and therefore changes the simulated fold angles rather than just the
-render, and requires per-vertex consistency conditions that general patterns do not always satisfy.  Neither is implemented.
-As it stands the wedge is a display artifact only - it does not affect the simulated fold angles, which are limited
-independently as described above.
+Two consequences are worth expecting rather than mistaking for bugs.  The <b>deployed (unfolded) state is stepped</b>, not a
+flat sheet - panels sit at their stack heights and are joined by extensions; that staircase is what the technique produces.
+And the <b>collision solver is not used in this mode</b>: it measures separation between plate midsurfaces, which offset
+panels deliberately fold onto a single plane while holding the plates apart by their offsets, so running it there fires
+contact everywhere and prevents the model folding flat.  Patterns with no resolvable layer ordering (not flat-foldable,
+parity conflicts, cyclic stacking constraints) fall back to midsurface-centred plates with the angle limits and collision
+solver as described above.
 </p>
+<p>
+Not implemented in the offset mode: <b>through-holes</b> where one panel's extension passes through another panel's plane
+(so exported solids can self-intersect there), and Ku &amp; Demaine's <b>hinge doubling</b>, which splits a hinge in two
+where a single offset hinge cannot satisfy the constraints - without it, plates of adjacent layers can graze transiently at
+intermediate fold angles even though the deployed and fully folded states are clean.  Chen, Peng &amp; You's spatial-linkage
+conversion is a different approach to the same problem and is not implemented either.
+</p>
+
+<br/>
+<b>References for the thickness work:</b>
+<ul>
+<li><a href="https://asmedigitalcollection.asme.org/appliedmechanicsreviews/article/70/1/010805/443701/A-Review-of-Thickness-Accommodation-Techniques-in" target="_blank">A Review of Thickness-Accommodation Techniques in Origami-Inspired Engineering</a>,
+R. J. Lang, K. A. Tolman, E. B. Crampton, S. P. Magleby, L. L. Howell, <i>ASME Applied Mechanics Reviews</i> 70(1):010805, 2018 - the taxonomy of the techniques below.</li>
+<li><a href="https://asmedigitalcollection.asme.org/IDETC-CIE/proceedings-abstract/IDETC-CIE2014/46377/V05BT08A054/257627" target="_blank">An Offset Panel Technique for Thick Rigidly Foldable Origami</a>,
+B. J. Edmondson, R. J. Lang, S. P. Magleby, L. L. Howell, ASME IDETC 2014 - the offset panel construction used here.</li>
+<li>Folding Flat Crease Patterns With Thick Materials, J. S. Ku and E. D. Demaine, <i>ASME Journal of Mechanisms and Robotics</i>, 2016 - generalises offset panels to arbitrary flat-foldable patterns; this implementation follows the offset construction but not its hinge doubling.</li>
+<li><a href="https://www.science.org/doi/abs/10.1126/science.aab2870" target="_blank">Origami of thick panels</a>,
+Y. Chen, R. Peng, Z. You, <i>Science</i> 349(6246):396-400, 2015 - the spatial-linkage alternative (Bennett/Myard/Bricard), not implemented here.</li>
+<li><a href="https://origami.c.u-tokyo.ac.jp/~tachi/cg/ThickRigidOrigamiASME2011.pdf" target="_blank">Rigid-Foldable Thick Origami</a>,
+T. Tachi, 2011 - tapered panels; the source of the fold angle limit used by the fallback mode.</li>
+</ul>
 
 <br/>
 <b>External Libraries:</b><br/><br/>

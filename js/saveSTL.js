@@ -99,9 +99,9 @@ function thickenGeo(geo, thickness){
 function makeSaveGEO(doublesided){
     //when thickness simulation is on (and no explicit thickening is requested), export the
     //same per-face slab solids shown on screen, so the file keeps the full simulated
-    //thickness at any fold angle instead of the miter-capped offset surface
-    var useSimulatedThickness = globals.simulateThickness && globals.materialThickness > 0 &&
-        !(globals.thickenModel && globals.thickenOffset > 0);
+    //thickness at any fold angle instead of the miter-capped offset surface. the same
+    //predicate drives the dimensions shown in the export dialog
+    var useSimulatedThickness = globals.model.exportUsesThickness();
     var bufferGeo = useSimulatedThickness ? globals.model.getThicknessGeometry() : globals.model.getGeometry();
     var geo = new THREE.Geometry().fromBufferGeometry( bufferGeo );
 

@@ -485,7 +485,13 @@ function initControls(globals){
     }, 0);
     setCheckbox("#collisionsEnabled", globals.collisionsEnabled, function(val){
         globals.collisionsEnabled = val;//read by the solver each step, nothing else to sync
-        if (val && !globals.collisionsAvailable){
+        if (!val) return;
+        if (globals.thickness && globals.thickness.offsetPanelsActive()){
+            globals.warn("Collision solving is not used for this model: its panels are offset across the " +
+                "folded stack, which already holds the plates apart.  The contact solver measures distances " +
+                "between the plate midsurfaces, which offset panels deliberately fold onto a single plane, " +
+                "so running it here would stop the model folding flat.");
+        } else if (!globals.collisionsAvailable){
             globals.warn("Collision solving is disabled for this model: it is too large for the all-pairs " +
                 "contact solver, which would slow the simulation to a crawl.  Fold angles are still limited " +
                 "by material thickness.");

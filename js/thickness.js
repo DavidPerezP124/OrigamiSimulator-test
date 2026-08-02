@@ -27,22 +27,40 @@
  *    a flat-foldable pattern folds into a wedged stack of plates instead of a plane -
  *    i.e. it stays "thick flat foldable".
  *
- * Note on what is NOT implemented: that angle limit is derived from Tachi's tapered panel
- * construction, in which the plates are physically trimmed back near each hinge. We use the
- * limit as a stand-in for that trimming - the rendered plates are untapered slabs extruded
- * about the folded midsurface, and every hinge axis lies on the midsurface rather than being
- * shifted onto a plate surface. Two slabs rotating about a shared centerline necessarily
- * overlap in a wedge along the crease line, so that wedge is present in the thick view and in
- * exported solids. Removing it means implementing one of the constructions properly: tapered
- * panels (convex-clip each slab against its hinges' dihedral bisector planes, variable output
- * topology) or axis shift / offset panels (move the axes onto the plate surfaces, which lets
- * plates close fully flat and so changes the simulated fold angles, not just the render).
- * Both were considered and deliberately left out; see the README.
+ * 3. Offset panels, when the layer ordering above resolves (the offset panel technique of
+ *    Edmondson, Lang, Magleby & Howell, generalised to arbitrary flat-foldable patterns by
+ *    Ku & Demaine). Each panel's plate is shifted off the midsurface along its own normal by
+ *    o = (layer + 0.5)*t*parity, which places it at its own height in the folded stack. The
+ *    plates no longer share a hinge centerline, so they close fully flat without touching and
+ *    the angle limits of (2) are switched off. Offset panels preserve the folding kinematics
+ *    of the zero-thickness pattern, which is what lets the existing compliant solver keep
+ *    driving the midsurface mesh unchanged while the plates ride at their stack offsets.
+ *
+ * Mode (3) is used whenever a layer ordering was found; otherwise the model falls back to the
+ * angle limits of (2) with plates centred on the midsurface.
+ *
+ * Note on what is NOT implemented, in mode (3):
+ *  - Through-holes. The offset panel technique cuts holes where one panel's extension passes
+ *    through another panel's plane. We render the extensions without cutting the holes, so an
+ *    exported solid can self-intersect there.
+ *  - Hinge doubling. Ku & Demaine's central generalisation splits a hinge into two hinges plus
+ *    a connecting strip where a single offset hinge cannot satisfy the constraints. We use the
+ *    plain offset construction, so plates of adjacent layers can graze transiently at
+ *    intermediate fold angles even though the deployed and fully folded states are clean.
+ *  - Chen, Peng & You's spatial-linkage conversion (Bennett/Myard/Bricard) is a different
+ *    approach to the same problem and is not implemented.
+ * See the README for the references.
  */
 
 function initThickness(globals){
 
     var FOLD_TOL = 0.3;//radians, tolerance for classifying target angles as flat (0) or fully folded (+/-PI)
+
+    //the layer solution for the current model, or null if the pattern has no orderable
+    //flat-folded state. {facePanel: [panel index per face], panelLayer: [stack index per
+    //panel], faceParity: [+/-1 per face], numPanels}. this is what the offset panel
+    //construction consumes - see getPanelOffset below
+    var layerSolution = null;
 
     //"no limit" is a large finite angle rather than PI: the solvers clamp target angles to
     //this value and add a restoring force above it, and theta is unwrapped across
@@ -53,6 +71,9 @@ function initThickness(globals){
     //returns the max fold angle magnitude for a crease, in radians
     function getCreaseThetaMax(crease){
         if (crease.type == 0 || !globals.simulateThickness) return NO_LIMIT;
+        //offset panels are staggered across the stack rather than sharing a centerline, so
+        //they close fully flat - the tapered-panel limit only applies to the fallback
+        if (offsetPanelsActive()) return NO_LIMIT;
         var t = globals.materialThickness;//pattern units - panelDepth is in pattern units too, the ratio is scale free
         if (!(t > 0)) return NO_LIMIT;
         var gap = (crease.layerGap > 0 ? crease.layerGap : 1)*t;
@@ -70,6 +91,7 @@ function initThickness(globals){
     function assignLayerGaps(creases, faces, nodes){
 
         var numFaces = faces.length;
+        layerSolution = null;//recomputed below; a stale solution must never outlive its model
         //layerGap and panelDepth are plain data owned by this module
         for (var i=0;i<creases.length;i++){
             creases[i].layerGap = creases[i].type == 0 ? 0 : 1;
@@ -242,12 +264,60 @@ function initThickness(globals){
             var gap = Math.abs(layer[panelIds[find(crease.face1Index)]] - layer[panelIds[find(crease.face2Index)]]);
             crease.layerGap = gap > 1 ? gap : 1;
         }
+
+        if (ordered){
+            //keep the full solution: the offset panel construction needs a stack index and an
+            //orientation per face, not just the per-crease gaps
+            var facePanel = new Int32Array(numFaces);
+            var faceParity = new Int32Array(numFaces);
+            var extraPanels = numPanels;
+            for (var i=0;i<numFaces;i++){
+                var root = find(i);
+                //faces in no folded crease never got a panel id above - give them their own
+                if (panelIds[root] === undefined) panelIds[root] = extraPanels++;
+                facePanel[i] = panelIds[root];
+                faceParity[i] = parity[i] >= 0 ? 1 : -1;
+            }
+            var panelLayer = new Int32Array(extraPanels);
+            for (var i=0;i<numPanels;i++) panelLayer[i] = layer[i];
+            layerSolution = {
+                facePanel: facePanel,
+                panelLayer: panelLayer,
+                faceParity: faceParity,
+                numPanels: extraPanels
+            };
+        }
         return ordered;
+    }
+
+    function getLayerSolution(){
+        return layerSolution;
+    }
+
+    //true when the offset panel construction is in force: thickness on, a real thickness, and
+    //a resolved layer ordering to place the panels in. offset panels fold fully flat, so the
+    //tapered-panel angle limits are not applied in this mode
+    function offsetPanelsActive(){
+        return !!(globals.simulateThickness && globals.materialThickness > 0 && layerSolution);
+    }
+
+    //signed offset of a face's plate from the midsurface, along the face's own normal, in
+    //pattern units. o = (layer + 0.5)*t*parity puts each panel's slab at its own height in
+    //the folded stack instead of every panel sharing the midsurface centerline
+    function getFaceOffset(faceIndex){
+        if (!offsetPanelsActive()) return 0;
+        if (faceIndex < 0 || faceIndex >= layerSolution.facePanel.length) return 0;
+        var panel = layerSolution.facePanel[faceIndex];
+        var layer = layerSolution.panelLayer[panel];
+        return (layer+0.5)*globals.materialThickness*layerSolution.faceParity[faceIndex];
     }
 
     return {
         NO_LIMIT: NO_LIMIT,
         assignLayerGaps: assignLayerGaps,
-        getCreaseThetaMax: getCreaseThetaMax
+        getCreaseThetaMax: getCreaseThetaMax,
+        getLayerSolution: getLayerSolution,
+        offsetPanelsActive: offsetPanelsActive,
+        getFaceOffset: getFaceOffset
     }
 }
