@@ -543,8 +543,9 @@ function initDynamicSolver(globals){
             creaseMeta[i*4] = crease.getK();
             // creaseMeta[i*4+1] = crease.getD();
             if (initing) creaseMeta[i*4+2] = crease.getTargetTheta();
-            //thickness-limited max fold angle
-            creaseMeta[i*4+3] = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : Math.PI;
+            //thickness-limited max fold angle (a large value means unlimited, so the shader's
+            //clamp and overshoot force are inert when thickness simulation is off)
+            creaseMeta[i*4+3] = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : 10000;
         }
         globals.gpuMath.initTextureFromData("u_creaseMeta", textureDimCreases, textureDimCreases, "FLOAT", creaseMeta, true);
         if (contactProgramReady) updateContactParams();

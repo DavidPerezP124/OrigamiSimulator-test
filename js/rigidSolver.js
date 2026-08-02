@@ -176,8 +176,8 @@ function initRigidSolver(){
             var theta = Math.atan2((normal1.clone().cross(creaseVector)).dot(normal2), dotNormals);
 
             var targetTheta = globals.creasePercent*crease.targetTheta;
-            //thick material cannot fold completely flat
-            var thetaMax = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : Math.PI;
+            //thick material cannot fold completely flat (a large value means unlimited)
+            var thetaMax = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : 10000;
             if (targetTheta > thetaMax) targetTheta = thetaMax;
             else if (targetTheta < -thetaMax) targetTheta = -thetaMax;
             var diff = theta - targetTheta;

@@ -32,14 +32,20 @@ function initThickness(globals){
 
     var FOLD_TOL = 0.3;//radians, tolerance for classifying target angles as flat (0) or fully folded (+/-PI)
 
+    //"no limit" is a large finite angle rather than PI: the solvers clamp target angles to
+    //this value and add a restoring force above it, and theta is unwrapped across
+    //revolutions, so returning PI would cap hinges dragged past 180 degrees and change
+    //zero-thickness behavior. kept well inside mediump float range for the gpu texture
+    var NO_LIMIT = 10000;
+
     //returns the max fold angle magnitude for a crease, in radians
     function getCreaseThetaMax(crease){
-        if (crease.type == 0 || !globals.simulateThickness) return Math.PI;
+        if (crease.type == 0 || !globals.simulateThickness) return NO_LIMIT;
         var t = globals.materialThickness;//pattern units - panelDepth is in pattern units too, the ratio is scale free
-        if (!(t > 0)) return Math.PI;
+        if (!(t > 0)) return NO_LIMIT;
         var gap = (crease.layerGap > 0 ? crease.layerGap : 1)*t;
         var h = crease.panelDepth;//depth of the smaller rigid panel at this hinge, set by assignLayerGaps
-        if (!(h > 0)) return Math.PI;
+        if (!(h > 0)) return NO_LIMIT;
         var thetaMax = Math.PI - 2*Math.atan(gap/(2*h));
         return thetaMax > 0 ? thetaMax : 0;
     }
@@ -224,6 +230,7 @@ function initThickness(globals){
     }
 
     return {
+        NO_LIMIT: NO_LIMIT,
         assignLayerGaps: assignLayerGaps,
         getCreaseThetaMax: getCreaseThetaMax
     }

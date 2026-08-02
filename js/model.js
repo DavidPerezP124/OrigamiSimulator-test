@@ -222,8 +222,11 @@ function initModel(globals){
         if (thicknessMesh.visible) updateThicknessGeometry();
     }
 
-    //builds the slab mesh topology: for each face, 3 top vertices, 3 bottom vertices,
-    //a top and bottom triangle and 3 side walls; positions are filled in every frame by
+    //builds the slab mesh topology: for each face, 3 top vertices, 3 bottom vertices, a top
+    //and bottom triangle, and side walls on every edge except the facet creases interior to
+    //a rigid panel - those neighbours are coplanar and their slabs already meet there, so
+    //walling them would bury a pair of coincident, oppositely wound faces inside the panel
+    //and make exported STLs non-manifold. positions are filled in every frame by
     //updateThicknessGeometry, colors are static per topology
     function buildThicknessGeometry(){
         var numFaces = faces.length;
@@ -233,8 +236,34 @@ function initModel(globals){
         thickColors = new Float32Array(numSlabVertices*3);
         slabNormals = new Float32Array(numFaces*3);
 
+        //mark the edge slots that sit inside a rigid panel (shared via a facet crease)
+        var interiorEdge = {};
+        var numInteriorSlots = 0;
+        for (var i=0;i<creases.length;i++){
+            var crease = creases[i];
+            if (crease.type != 0) continue;//hinges fold, their slabs need closed ends
+            var n1 = crease.edge.nodes[0].getIndex();
+            var n2 = crease.edge.nodes[1].getIndex();
+            var creaseFaces = [crease.face1Index, crease.face2Index];
+            for (var s=0;s<2;s++){
+                var face = faces[creaseFaces[s]];
+                if (!face) continue;
+                for (var j=0;j<3;j++){
+                    var a = face[j];
+                    var b = face[(j+1)%3];
+                    if ((a == n1 && b == n2) || (a == n2 && b == n1)){
+                        if (!interiorEdge[creaseFaces[s]*3+j]){
+                            interiorEdge[creaseFaces[s]*3+j] = true;
+                            numInteriorSlots++;
+                        }
+                    }
+                }
+            }
+        }
+
+        var numWalls = numFaces*3 - numInteriorSlots;
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
-        var thickIndices = new IndexArrayType(numFaces*8*3);//top + bottom + 3 walls of 2 triangles each
+        var thickIndices = new IndexArrayType((numFaces*2 + numWalls*2)*3);//top + bottom + 2 triangles per wall
         var index = 0;
         for (var i=0;i<numFaces;i++){
             var top = 6*i;
@@ -246,6 +275,7 @@ function initModel(globals){
             thickIndices[index++] = bottom+2;
             thickIndices[index++] = bottom+1;
             for (var j=0;j<3;j++){//outward-facing side walls
+                if (interiorEdge[3*i+j]) continue;
                 var k = (j+1)%3;
                 thickIndices[index++] = top+j;
                 thickIndices[index++] = bottom+j;
