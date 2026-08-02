@@ -42,16 +42,6 @@ Crease.prototype.getTargetTheta = function(){
     return this.targetTheta;
 };
 
-Crease.prototype.setLayerGap = function(layerGap){
-    this.layerGap = layerGap;
-};
-
-//max fold angle magnitude this crease can reach without its plates interpenetrating
-Crease.prototype.getThetaMax = function(){
-    if (globals.thickness) return globals.thickness.getCreaseThetaMax(this);
-    return Math.PI;
-};
-
 Crease.prototype.getK = function(){
     var length = this.getLength();
     if (this.type == 0) return globals.panelStiffness*length;

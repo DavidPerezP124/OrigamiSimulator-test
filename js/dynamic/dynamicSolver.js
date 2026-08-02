@@ -484,7 +484,8 @@ function initDynamicSolver(globals){
             creaseMeta[i*4] = crease.getK();
             // creaseMeta[i*4+1] = crease.getD();
             if (initing) creaseMeta[i*4+2] = crease.getTargetTheta();
-            creaseMeta[i*4+3] = crease.getThetaMax();//thickness-limited max fold angle
+            //thickness-limited max fold angle
+            creaseMeta[i*4+3] = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : Math.PI;
         }
         globals.gpuMath.initTextureFromData("u_creaseMeta", textureDimCreases, textureDimCreases, "FLOAT", creaseMeta, true);
     }

@@ -48,8 +48,9 @@ function initThickness(globals){
     //returns true if a layer ordering was computed, false if the default (one layer) was kept
     function assignLayerGaps(creases, numFaces){
 
+        //layerGap is plain data owned by this module - creases are not required to declare it
         for (var i=0;i<creases.length;i++){
-            creases[i].setLayerGap(creases[i].type == 0 ? 0 : 1);
+            creases[i].layerGap = creases[i].type == 0 ? 0 : 1;
         }
         if (numFaces == 0 || creases.length == 0) return false;
 
@@ -172,7 +173,7 @@ function initThickness(globals){
         for (var i=0;i<foldedCreases.length;i++){
             var crease = foldedCreases[i];
             var gap = Math.abs(layer[panelIds[find(crease.face1Index)]] - layer[panelIds[find(crease.face2Index)]]);
-            crease.setLayerGap(gap > 1 ? gap : 1);
+            crease.layerGap = gap > 1 ? gap : 1;
         }
         return ordered;
     }
