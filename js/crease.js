@@ -17,6 +17,7 @@ function Crease(edge, face1Index, face2Index, targetTheta, type, node1, node2, i
     this.node1 = node1;//node at vertex of face 1
     this.node2 = node2;//node at vertex of face 2
     this.index = index;
+    this.layerGap = type == 0 ? 0 : 1;//num material layers this hinge spans in the flat-folded state
     node1.addCrease(this);
     node2.addCrease(this);
 }
@@ -39,6 +40,16 @@ Crease.prototype.getNormal2Index = function(){
 
 Crease.prototype.getTargetTheta = function(){
     return this.targetTheta;
+};
+
+Crease.prototype.setLayerGap = function(layerGap){
+    this.layerGap = layerGap;
+};
+
+//max fold angle magnitude this crease can reach without its plates interpenetrating
+Crease.prototype.getThetaMax = function(){
+    if (globals.thickness) return globals.thickness.getCreaseThetaMax(this);
+    return Math.PI;
 };
 
 Crease.prototype.getK = function(){

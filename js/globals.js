@@ -57,6 +57,10 @@ function initGlobals(){
         density: 1,
         integrationType: "euler",
 
+        //material thickness settings
+        simulateThickness: false,//limit fold angles so plates of thick material cannot interpenetrate
+        materialThickness: 5,//material thickness in crease pattern units
+
         strainClip: 5.0,//for strain visualization, % strain that is drawn red
 
         //import pattern settings

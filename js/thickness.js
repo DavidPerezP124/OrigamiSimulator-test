@@ -1,0 +1,184 @@
+/**
+ * Material thickness accommodation for the folding simulation.
+ *
+ * The zero-thickness solver drives each crease toward targetTheta*creasePercent, so a
+ * flat-foldable pattern collapses onto a single plane with all its layers interpenetrating.
+ * With a real material thickness t this is impossible - each hinge can only close far enough
+ * that the plates it connects end up separated by the layers of material stacked between them.
+ *
+ * This module combines two known techniques from the thick-origami literature:
+ *
+ * 1. Layer ordering of the flat-folded state. Faces joined by facet creases are merged
+ *    into rigid panels (union-find), then every fully folded crease (target angle +/-180)
+ *    contributes an above/below constraint between its two panels, with the constraint
+ *    direction given by the mountain/valley sign and the face's orientation parity
+ *    (whether an even or odd number of folded creases is crossed to reach it - the
+ *    standard reflection-map argument, see Demaine & O'Rourke, "Geometric Folding
+ *    Algorithms"). Integer layer indices are assigned by longest-path layering of the
+ *    constraint digraph (Kahn's algorithm). The exact layer-ordering problem is NP-hard
+ *    (Akitaya et al.), so this is a heuristic: it is exact for accordions, Miura-ori and
+ *    other patterns whose ordering is forced by crease adjacency, and it degrades
+ *    gracefully (minimum gap of one layer) on orderings it cannot resolve.
+ *
+ * 2. Fold angle limits per crease (Tachi 2011, "Rigid-Foldable Thick Origami" - tapered
+ *    panels/axis shift). A hinge whose plates must end up offset by a gap g = layerGap*t,
+ *    with panel depth h on either side, can close at most to PI - 2*atan(g/(2h)) before the
+ *    plates interpenetrate. The solver clamps each crease's target angle to this limit, so
+ *    a flat-foldable pattern folds into a wedged stack of plates instead of a plane -
+ *    i.e. it stays "thick flat foldable".
+ */
+
+function initThickness(globals){
+
+    var FOLD_TOL = 0.3;//radians, tolerance for classifying target angles as flat (0) or fully folded (+/-PI)
+
+    //returns the max fold angle magnitude for a crease, in radians
+    function getCreaseThetaMax(crease){
+        if (crease.type == 0 || !globals.simulateThickness) return Math.PI;
+        var t = globals.materialThickness*globals.scale;//pattern units -> simulation units
+        if (!(t > 0)) return Math.PI;
+        var gap = (crease.layerGap > 0 ? crease.layerGap : 1)*t;
+        var h = Math.min(crease.getLengthToNode1(), crease.getLengthToNode2());//panel depth at the hinge
+        if (!(h > 0)) return Math.PI;
+        var thetaMax = Math.PI - 2*Math.atan(gap/(2*h));
+        return thetaMax > 0 ? thetaMax : 0;
+    }
+
+    //sets crease.layerGap = number of material layers the hinge spans in the fully folded state
+    //returns true if a layer ordering was computed, false if the default (one layer) was kept
+    function assignLayerGaps(creases, numFaces){
+
+        for (var i=0;i<creases.length;i++){
+            creases[i].setLayerGap(creases[i].type == 0 ? 0 : 1);
+        }
+        if (numFaces == 0 || creases.length == 0) return false;
+
+        //classify creases and merge coplanar faces into rigid panels
+        var parent = [];
+        for (var i=0;i<numFaces;i++) parent.push(i);
+        function find(a){
+            while (parent[a] != a){
+                parent[a] = parent[parent[a]];
+                a = parent[a];
+            }
+            return a;
+        }
+
+        var foldedCreases = [];
+        for (var i=0;i<creases.length;i++){
+            var crease = creases[i];
+            var target = crease.type == 0 ? 0 : crease.getTargetTheta();
+            if (Math.abs(target) <= FOLD_TOL){//facet crease or unfolded hinge - same rigid panel
+                parent[find(crease.face1Index)] = find(crease.face2Index);
+            } else if (Math.abs(Math.abs(target)-Math.PI) <= FOLD_TOL){
+                foldedCreases.push(crease);
+            } else {
+                //intermediate target angle - the pattern has no flat-folded state to order
+                return false;
+            }
+        }
+        if (foldedCreases.length == 0) return false;
+
+        //orientation parity: a face is mirrored in the flat-folded state iff an odd number
+        //of folded creases is crossed to reach it
+        var neighbors = [];
+        for (var i=0;i<numFaces;i++) neighbors.push([]);
+        for (var i=0;i<foldedCreases.length;i++){
+            var crease = foldedCreases[i];
+            neighbors[crease.face1Index].push(crease.face2Index);
+            neighbors[crease.face2Index].push(crease.face1Index);
+        }
+        //faces of the same panel share parity - link panel members with non-flipping edges
+        var panelMembers = {};
+        for (var i=0;i<numFaces;i++){
+            var root = find(i);
+            if (panelMembers[root] === undefined) panelMembers[root] = [];
+            panelMembers[root].push(i);
+        }
+        var parity = [];
+        for (var i=0;i<numFaces;i++) parity.push(0);//0 = unvisited
+        for (var s=0;s<numFaces;s++){
+            if (parity[s] != 0) continue;
+            parity[s] = 1;
+            var queue = [s];
+            var head = 0;
+            while (head < queue.length){
+                var f = queue[head++];
+                var linked = panelMembers[find(f)];
+                for (var j=0;j<linked.length;j++){//same panel, same parity
+                    if (parity[linked[j]] == 0){
+                        parity[linked[j]] = parity[f];
+                        queue.push(linked[j]);
+                    } else if (parity[linked[j]] != parity[f]) return false;//parity conflict
+                }
+                for (var j=0;j<neighbors[f].length;j++){//across a folded crease, flipped parity
+                    var g = neighbors[f][j];
+                    if (parity[g] == 0){
+                        parity[g] = -parity[f];
+                        queue.push(g);
+                    } else if (parity[g] != -parity[f]) return false;//parity conflict
+                }
+            }
+        }
+
+        //stacking constraint digraph between panels: for each folded crease, the M/V sign
+        //combined with the parity of face1 decides which panel lies above the other
+        var panelIds = {};
+        var numPanels = 0;
+        for (var i=0;i<foldedCreases.length;i++){
+            var crease = foldedCreases[i];
+            var roots = [find(crease.face1Index), find(crease.face2Index)];
+            for (var j=0;j<2;j++){
+                if (panelIds[roots[j]] === undefined) panelIds[roots[j]] = numPanels++;
+            }
+        }
+        var successors = [];
+        var inDegree = [];
+        for (var i=0;i<numPanels;i++){
+            successors.push([]);
+            inDegree.push(0);
+        }
+        for (var i=0;i<foldedCreases.length;i++){
+            var crease = foldedCreases[i];
+            var a = panelIds[find(crease.face1Index)];
+            var b = panelIds[find(crease.face2Index)];
+            if (a == b) return false;//a panel folded onto itself has no valid ordering
+            var direction = (crease.getTargetTheta() > 0 ? 1 : -1)*parity[crease.face1Index];
+            var lo = direction > 0 ? a : b;
+            var hi = direction > 0 ? b : a;
+            successors[lo].push(hi);
+            inDegree[hi]++;
+        }
+
+        //longest-path layering via Kahn's algorithm
+        var layer = [];
+        for (var i=0;i<numPanels;i++) layer.push(0);
+        var queue = [];
+        for (var i=0;i<numPanels;i++){
+            if (inDegree[i] == 0) queue.push(i);
+        }
+        var head = 0;
+        while (head < queue.length){
+            var p = queue[head++];
+            for (var j=0;j<successors[p].length;j++){
+                var q = successors[p][j];
+                if (layer[q] < layer[p]+1) layer[q] = layer[p]+1;
+                if (--inDegree[q] == 0) queue.push(q);
+            }
+        }
+        var ordered = head == numPanels;
+        if (!ordered) console.warn("thickness: cyclic layer ordering constraints, layer gaps are approximate");
+
+        for (var i=0;i<foldedCreases.length;i++){
+            var crease = foldedCreases[i];
+            var gap = Math.abs(layer[panelIds[find(crease.face1Index)]] - layer[panelIds[find(crease.face2Index)]]);
+            crease.setLayerGap(gap > 1 ? gap : 1);
+        }
+        return ordered;
+    }
+
+    return {
+        assignLayerGaps: assignLayerGaps,
+        getCreaseThetaMax: getCreaseThetaMax
+    }
+}

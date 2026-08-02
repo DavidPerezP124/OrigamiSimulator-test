@@ -53,6 +53,26 @@ make good demo files, please send them to me (Amanda) so I can add them to the <
 </ul>
 
 <br/>
+<b>Material Thickness Simulation:</b><br/><br/>
+<p>
+Enable <b>Simulate material thickness</b> in the <b>Simulation Settings</b> of the <b>Advanced Options</b> to fold as a stack of rigid plates
+of a given thickness instead of a zero-thickness sheet.  The folded surface is rendered as an extruded solid, and each crease's fold angle is
+limited so plates cannot pass through each other - a flat foldable pattern folds into a wedged stack of plates ("thick flat foldable")
+rather than collapsing onto a single plane.
+</p>
+<p>
+The fold angle limits are derived from two known thickness-accommodation techniques.  For patterns with a flat-folded state
+(all fold angles 0&deg; or &plusmn;180&deg;), a layer ordering of the folded state is estimated from the mountain/valley assignment
+(the reflection-map/layer-ordering formulation of Demaine &amp; O'Rourke, <i>Geometric Folding Algorithms</i>; the exact ordering problem
+is NP-hard per Akitaya et al., so a longest-path layering heuristic over the crease constraint graph is used).  Each hinge then gets the
+number of material layers it must wrap around in the folded stack, and its maximum fold angle follows the tapered-panel/axis-shift
+accommodation of Tomohiro Tachi's <a href="https://origami.c.u-tokyo.ac.jp/~tachi/cg/ThickRigidOrigamiASME2011.pdf" target="_blank">
+Rigid-Foldable Thick Origami</a>: a hinge spanning a gap <i>g</i> with panel depth <i>h</i> can close at most to
+&pi;&nbsp;&minus;&nbsp;2&nbsp;atan(<i>g</i>/2<i>h</i>).  Like everything else in this compliant simulation the limits are applied as soft
+constraints, so tightly wrapped multi-layer folds may still locally exceed their limit under load from neighboring creases.
+</p>
+
+<br/>
 <b>External Libraries:</b><br/><br/>
 <ul>
     <li>All rendering and 3D interaction done with <a target="_blank" href="https://threejs.org/">three.js</a></li>

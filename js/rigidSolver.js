@@ -175,7 +175,11 @@ function initRigidSolver(){
             //https://math.stackexchange.com/questions/47059/how-do-i-calculate-a-dihedral-angle-given-cartesian-coordinates
             var theta = Math.atan2((normal1.clone().cross(creaseVector)).dot(normal2), dotNormals);
 
-            var diff = theta - globals.creasePercent*crease.targetTheta;
+            var targetTheta = globals.creasePercent*crease.targetTheta;
+            var thetaMax = crease.getThetaMax();//thick material cannot fold completely flat
+            if (targetTheta > thetaMax) targetTheta = thetaMax;
+            else if (targetTheta < -thetaMax) targetTheta = -thetaMax;
+            var diff = theta - targetTheta;
             var rxnForceScale = crease.getK()*diff;
 
             var partial1, partial2;

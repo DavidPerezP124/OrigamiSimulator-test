@@ -29,7 +29,7 @@ function initDynamicSolver(globals){
     var faceVertexIndices;//[a,b,c] textureDimFaces
     var nominalTriangles;//[angleA, angleB, angleC]
     var nodeFaceMeta;//[faceIndex, a, b, c] textureNodeFaces
-    var creaseMeta;//[k, d, targetTheta, -] textureDimCreases
+    var creaseMeta;//[k, d, targetTheta, thetaMax] textureDimCreases
     var creaseMeta2;//[node1Index, node2Index, node3index, node4index]//nodes 1 and 2 are opposite crease, 3 and 4 are on crease, textureDimCreases
     var nodeCreaseMeta;//[creaseIndex (thetaIndex), nodeIndex (1/2/3/4), -, -] textureDimNodeCreases
     var creaseGeo;//[h1, h2, coef1, coef2]
@@ -484,6 +484,7 @@ function initDynamicSolver(globals){
             creaseMeta[i*4] = crease.getK();
             // creaseMeta[i*4+1] = crease.getD();
             if (initing) creaseMeta[i*4+2] = crease.getTargetTheta();
+            creaseMeta[i*4+3] = crease.getThetaMax();//thickness-limited max fold angle
         }
         globals.gpuMath.initTextureFromData("u_creaseMeta", textureDimCreases, textureDimCreases, "FLOAT", creaseMeta, true);
     }

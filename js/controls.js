@@ -473,6 +473,17 @@ function initControls(globals){
         globals.materialHasChanged = true;
     });
 
+    setCheckbox("#simulateThickness", globals.simulateThickness, function(val){
+        globals.simulateThickness = val;
+        globals.creaseMaterialHasChanged = true;//refresh thickness-limited fold angles on the gpu
+        globals.model.updateThicknessView();
+    });
+    setInput("#materialThickness", globals.materialThickness, function(val){
+        globals.materialThickness = val;
+        globals.creaseMaterialHasChanged = true;
+        globals.model.updateThicknessView();
+    }, 0);
+
     var creasePercentSlider = setSliderInput("#creasePercent", globals.creasePercent*100, -100, 100, 1, function(val){
         globals.creasePercent = val/100;
         globals.shouldChangeCreasePercent = true;
