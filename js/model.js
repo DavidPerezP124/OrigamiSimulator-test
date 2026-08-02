@@ -48,6 +48,7 @@ function initModel(globals){
     var slabNormals = null;//scratch: unit extrusion normal per face, recomputed every frame
     var slabPanel = null;//face index -> rigid panel index (faces joined by facet creases)
     var slabPanelNormals = null;//scratch: one shared extrusion normal per rigid panel
+    var slabPanelMinDot = null;//scratch: worst alignment of a panel face with that normal
     var slabNumPanels = 0;
     //invisible but raycastable stand-in material for the flat mesh while the thick view is
     //shown, so node picking/dragging (3dUI, VRInterface) keeps working on the midsurface
@@ -290,6 +291,7 @@ function initModel(globals){
             slabPanel[i] = panelIds[root];
         }
         slabPanelNormals = new Float32Array(slabNumPanels*3);
+        slabPanelMinDot = new Float32Array(slabNumPanels);
 
         var numWalls = numFaces*3 - numInteriorSlots;
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
@@ -380,21 +382,42 @@ function initModel(globals){
                 slabPanelNormals[3*i+1] /= length;
                 slabPanelNormals[3*i+2] /= length;
             }
+            slabPanelMinDot[i] = 1;
+        }
+
+        //offsetting along the shared normal would thin a flexed facet to
+        //thickness*dot(panelNormal, faceNormal) measured normal to its own plane. divide
+        //that cosine back out using the panel's worst-aligned face, so every face of the
+        //panel is at least the requested thickness (exactly it when the panel is planar,
+        //and the offset stays common to the panel so the welded seams hold)
+        for (var i=0;i<numFaces;i++){
+            var faceLength = Math.sqrt(slabNormals[3*i]*slabNormals[3*i] +
+                slabNormals[3*i+1]*slabNormals[3*i+1] + slabNormals[3*i+2]*slabNormals[3*i+2]);
+            if (faceLength <= 0) continue;//degenerate triangle
+            var panel = slabPanel[i];
+            var dot = (slabNormals[3*i]*slabPanelNormals[3*panel] +
+                slabNormals[3*i+1]*slabPanelNormals[3*panel+1] +
+                slabNormals[3*i+2]*slabPanelNormals[3*panel+2])/faceLength;
+            if (dot < slabPanelMinDot[panel]) slabPanelMinDot[panel] = dot;
+        }
+        for (var i=0;i<slabNumPanels;i++){
+            //a panel bent past 120 degrees would send the correction to infinity, so cap it
+            if (!(slabPanelMinDot[i] > 0.5)) slabPanelMinDot[i] = 0.5;
         }
 
         for (var i=0;i<numFaces;i++){
             var a = faces[i][0], b = faces[i][1], c = faces[i][2];
-            var p = 3*slabPanel[i];
-            var nx = slabPanelNormals[p], ny = slabPanelNormals[p+1], nz = slabPanelNormals[p+2];
-            if (nx == 0 && ny == 0 && nz == 0){//panel folded onto itself, fall back to this face
-                nx = slabNormals[3*i];
-                ny = slabNormals[3*i+1];
-                nz = slabNormals[3*i+2];
-                var faceLength = Math.sqrt(nx*nx+ny*ny+nz*nz);
-                if (faceLength > 0){
-                    nx /= faceLength;
-                    ny /= faceLength;
-                    nz /= faceLength;
+            var panel = slabPanel[i];
+            var p = 3*panel;
+            var scale = halfThickness/slabPanelMinDot[panel];
+            var nx = slabPanelNormals[p]*scale, ny = slabPanelNormals[p+1]*scale, nz = slabPanelNormals[p+2]*scale;
+            if (nx == 0 && ny == 0 && nz == 0){//panel normals cancelled, fall back to this face
+                var fallback = Math.sqrt(slabNormals[3*i]*slabNormals[3*i] +
+                    slabNormals[3*i+1]*slabNormals[3*i+1] + slabNormals[3*i+2]*slabNormals[3*i+2]);
+                if (fallback > 0){
+                    nx = slabNormals[3*i]/fallback*halfThickness;
+                    ny = slabNormals[3*i+1]/fallback*halfThickness;
+                    nz = slabNormals[3*i+2]/fallback*halfThickness;
                 }
             }
             var corners = [a, b, c];
@@ -402,12 +425,12 @@ function initModel(globals){
                 var v = corners[j];
                 var top = 3*(6*i+j);
                 var bottom = 3*(6*i+j+3);
-                thickPositions[top] = positions[3*v] + nx*halfThickness;
-                thickPositions[top+1] = positions[3*v+1] + ny*halfThickness;
-                thickPositions[top+2] = positions[3*v+2] + nz*halfThickness;
-                thickPositions[bottom] = positions[3*v] - nx*halfThickness;
-                thickPositions[bottom+1] = positions[3*v+1] - ny*halfThickness;
-                thickPositions[bottom+2] = positions[3*v+2] - nz*halfThickness;
+                thickPositions[top] = positions[3*v] + nx;
+                thickPositions[top+1] = positions[3*v+1] + ny;
+                thickPositions[top+2] = positions[3*v+2] + nz;
+                thickPositions[bottom] = positions[3*v] - nx;
+                thickPositions[bottom+1] = positions[3*v+1] - ny;
+                thickPositions[bottom+2] = positions[3*v+2] - nz;
             }
         }
 

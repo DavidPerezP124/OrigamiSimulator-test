@@ -80,13 +80,17 @@ function initThickness(globals){
         var flatFoldable = true;
         for (var i=0;i<creases.length;i++){
             var crease = creases[i];
-            var target = crease.type == 0 ? 0 : crease.getTargetTheta();
-            if (Math.abs(target) <= FOLD_TOL){//facet crease or unfolded hinge - same rigid panel
+            if (crease.type == 0){
+                //facet crease: the two faces are one rigid panel. only these may be merged -
+                //an active crease is a hinge between separate plates however shallow its
+                //target, and merging one would inflate the panel depth its neighbours are
+                //measured against and collapse distinct layer-ordering nodes
                 parent[find(crease.face1Index)] = find(crease.face2Index);
-            } else if (Math.abs(Math.abs(target)-Math.PI) <= FOLD_TOL){
+            } else if (Math.abs(Math.abs(crease.getTargetTheta())-Math.PI) <= FOLD_TOL){
                 foldedCreases.push(crease);
             } else {
-                //intermediate target angle - the pattern has no flat-folded state to order
+                //a hinge that neither lies flat nor closes fully - the pattern has no
+                //flat-folded state for this ordering calculation
                 flatFoldable = false;
             }
         }

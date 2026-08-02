@@ -552,9 +552,10 @@ function initDynamicSolver(globals){
     }
 
     function updateContactParams(){
-        //plates repel when their midsurfaces get closer than 75% of the material thickness -
-        //the fold angle limits are the primary shaping constraint, contact is the safety net
-        var contactThickness = 0.75*globals.materialThickness*globals.scale;
+        //two plates of thickness t each carry t/2 either side of their midsurface, so their
+        //surfaces meet when the midsurfaces are a full t apart - repelling any later would
+        //let them interpenetrate before contact even engages
+        var contactThickness = globals.materialThickness*globals.scale;
         //keep contact softer than the axial constraints so it cannot destabilize the sim
         //(dt is chosen from the axial stiffness)
         var contactStiffness = 0.5*globals.axialStiffness;
