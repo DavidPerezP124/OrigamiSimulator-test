@@ -56,6 +56,21 @@ function initThickness(globals){
 
     var FOLD_TOL = 0.3;//radians, tolerance for classifying target angles as flat (0) or fully folded (+/-PI)
 
+    //How far two reflection paths may disagree about where a face lands, as a fraction of the
+    //pattern extent, before the flat-folded layout is treated as impossible. There is no clean
+    //separation available here, so this is a judgement call and the numbers behind it are worth
+    //recording. Measured disagreement for patterns that genuinely fold flat: 0 for the
+    //machine-generated BoxPleat .fold models, 0.0007 for randlettflappingbird, and 0.032 for
+    //flappingBird - hand-drawn SVG patterns satisfy Kawasaki only to within their drafting
+    //accuracy (about 1.5 degrees of closure error here). Against that, a degree-4 vertex whose
+    //sectors are off by 4/10/20 degrees disagrees by 0.049/0.123/0.244.
+    //0.1 sits about 3x above the worst legitimate model and catches the 10 and 20 degree cases.
+    //So violations gentler than roughly 8 degrees of closure error are NOT caught: they are not
+    //distinguishable from the drafting tolerance of real patterns. Erring the other way would
+    //disable offset panels on a headline model to reject a folding that is very nearly valid,
+    //and a false reject is only a fallback to angle limits plus contact, which is safe.
+    var LAYOUT_TOL = 0.1;
+
     //the layer solution for the current model, or null if the pattern has no orderable
     //flat-folded state. {facePanel: [panel index per face], panelLayer: [stack index per
     //panel], faceParity: [+/-1 per face], numPanels}. this is what the offset panel
@@ -78,7 +93,8 @@ function initThickness(globals){
     //rebuilds the layer ordering if the fold direction has reversed since it was computed
     function syncFoldDirection(){
         if (!solutionInputs || currentFoldSign() === solutionSign) return false;
-        assignLayerGaps(solutionInputs.creases, solutionInputs.faces, solutionInputs.nodes);
+        assignLayerGaps(solutionInputs.creases, solutionInputs.faces, solutionInputs.nodes,
+            solutionInputs.positions);
         //a rebuild changes layerGap, and with it every crease's thetaMax. the rigid solver
         //reads that live, but the dynamic solver bakes it into u_creaseMeta and only refreshes
         //on this flag - without it the gpu would keep clamping to the old direction's limits
@@ -112,13 +128,30 @@ function initThickness(globals){
     //hinge (pattern units), measured across the whole merged panel so the fold angle limit
     //does not depend on triangulation density
     //returns true if a layer ordering was computed, false if the default (one layer) was kept
-    function assignLayerGaps(creases, faces, nodes){
+    function assignLayerGaps(creases, faces, nodes, positionsSnapshot){
 
         var numFaces = faces.length;
+        //Every geometric quantity below is read through nodePos rather than from the nodes
+        //directly. buildModel calls this BEFORE it normalizes the model by globals.scale and
+        //writes the scaled coordinates back with setOriginalPosition, so a later rebuild would
+        //otherwise measure panelDepth in simulation units while getCreaseThetaMax still
+        //compares it against materialThickness in pattern units - collapsing every fold limit
+        //(measured: 173 degrees to 2.3 on huffmanWaterbomb) and staying wrong on the way back.
+        //The first call snapshots the pattern coordinates and every rebuild reuses them.
+        var nodePos = positionsSnapshot;
+        if (!nodePos){
+            nodePos = [];
+            for (var i=0;i<nodes.length;i++) nodePos.push(nodes[i].getOriginalPosition());
+        }
+        function creaseNodePos(crease, which){
+            var node = crease.edge.nodes[which];
+            var index = node.getIndex();
+            return nodePos[index] !== undefined ? nodePos[index] : node.getOriginalPosition();
+        }
         layerSolution = null;//recomputed below; a stale solution must never outlive its model
         var foldSign = currentFoldSign();
         solutionSign = foldSign;
-        solutionInputs = {creases: creases, faces: faces, nodes: nodes};
+        solutionInputs = {creases: creases, faces: faces, nodes: nodes, positions: nodePos};
         //layerGap and panelDepth are plain data owned by this module
         for (var i=0;i<creases.length;i++){
             creases[i].layerGap = creases[i].type == 0 ? 0 : 1;
@@ -170,8 +203,8 @@ function initThickness(globals){
         for (var i=0;i<creases.length;i++){
             var crease = creases[i];
             if (crease.type == 0) continue;
-            var p0 = crease.edge.nodes[0].getOriginalPosition();
-            var p1 = crease.edge.nodes[1].getOriginalPosition();
+            var p0 = creaseNodePos(crease, 0);
+            var p1 = creaseNodePos(crease, 1);
             var dirX = p1.x-p0.x, dirY = p1.y-p0.y, dirZ = p1.z-p0.z;
             var dirLength = Math.sqrt(dirX*dirX+dirY*dirY+dirZ*dirZ);
             if (dirLength == 0) continue;
@@ -183,7 +216,7 @@ function initThickness(globals){
             for (var side=0;side<2;side++){
                 var verts = panelVertices[sideRoots[side]];
                 for (var key in verts){
-                    var position = nodes[key].getOriginalPosition();
+                    var position = nodePos[key];
                     var vx = position.x-p0.x, vy = position.y-p0.y, vz = position.z-p0.z;
                     var proj = vx*dirX+vy*dirY+vz*dirZ;
                     var depthSq = vx*vx+vy*vy+vz*vz - proj*proj;
@@ -357,13 +390,13 @@ function initThickness(globals){
             //original positions span z as widely as x and y. Work in the pattern's own plane:
             //take its normal from a non-degenerate face and build an orthonormal basis in it
             if (nodes.length == 0) return null;
-            var origin = nodes[0].getOriginalPosition();
+            var origin = nodePos[0];
             var nx = 0, ny = 0, nz = 0, ux = 0, uy = 0, uz = 0;
             for (var i=0;i<numFaces;i++){
                 if (!faces[i]) continue;
-                var a = nodes[faces[i][0]].getOriginalPosition();
-                var b = nodes[faces[i][1]].getOriginalPosition();
-                var c = nodes[faces[i][2]].getOriginalPosition();
+                var a = nodePos[faces[i][0]];
+                var b = nodePos[faces[i][1]];
+                var c = nodePos[faces[i][2]];
                 var abx = b.x-a.x, aby = b.y-a.y, abz = b.z-a.z;
                 var acx = c.x-a.x, acy = c.y-a.y, acz = c.z-a.z;
                 var cx = aby*acz-abz*acy, cy = abz*acx-abx*acz, cz = abx*acy-aby*acx;
@@ -385,7 +418,7 @@ function initThickness(globals){
             var projected = new Array(nodes.length);
             var minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity, maxOff = 0;
             for (var i=0;i<nodes.length;i++){
-                var p = nodes[i].getOriginalPosition();
+                var p = nodePos[i];
                 var dx = p.x-origin.x, dy = p.y-origin.y, dz = p.z-origin.z;
                 var u = dx*ux+dy*uy+dz*uz;
                 var v = dx*vx+dy*vy+dz*vz;
@@ -424,14 +457,14 @@ function initThickness(globals){
                     var T = transforms[f];
                     for (var j=0;j<adjacency[f].length;j++){
                         var g = adjacency[f][j].other;
-                        if (transforms[g]) continue;
                         var crease = adjacency[f][j].crease;
+                        var candidate;
                         if (crease.type == 0){
-                            transforms[g] = T.slice();//one rigid panel, same placement
+                            candidate = T.slice();//one rigid panel, same placement
                         } else {
                             //reflect across the image of the shared crease under T
-                            var e0 = projectPos(crease.edge.nodes[0].getOriginalPosition());
-                            var e1 = projectPos(crease.edge.nodes[1].getOriginalPosition());
+                            var e0 = projectPos(creaseNodePos(crease, 0));
+                            var e1 = projectPos(creaseNodePos(crease, 1));
                             var px = T[0]*e0[0] + T[1]*e0[1] + T[4], py = T[2]*e0[0] + T[3]*e0[1] + T[5];
                             var qx = T[0]*e1[0] + T[1]*e1[1] + T[4], qy = T[2]*e1[0] + T[3]*e1[1] + T[5];
                             var dx = qx-px, dy = qy-py;
@@ -440,13 +473,37 @@ function initThickness(globals){
                             dx /= len; dy /= len;
                             var m0 = 2*dx*dx-1, m1 = 2*dx*dy, m2 = m1, m3 = 2*dy*dy-1;
                             //R(v) = M(v-P)+P, composed after T
-                            transforms[g] = [
+                            candidate = [
                                 m0*T[0]+m1*T[2], m0*T[1]+m1*T[3],
                                 m2*T[0]+m3*T[2], m2*T[1]+m3*T[3],
                                 m0*(T[4]-px)+m1*(T[5]-py)+px,
                                 m2*(T[4]-px)+m3*(T[5]-py)+py
                             ];
                         }
+                        if (transforms[g]){
+                            //a face reachable by more than one path must get the same placement
+                            //from all of them. a closed loop of creases that disagrees describes
+                            //a folding that cannot exist, however its parity works out, and the
+                            //layout built from whichever path happened to be visited first would
+                            //be fiction - so refuse it rather than order panels against it
+                            var prev = transforms[g];
+                            //compare where the two paths actually put this face, rather than
+                            //matrix entries: a disagreement is only meaningful as a distance
+                            var disagreement = 0;
+                            for (var k=0;k<3;k++){
+                                var q = projected[faces[g][k]];
+                                if (!q) return null;
+                                var ax = prev[0]*q[0]+prev[1]*q[1]+prev[4];
+                                var ay = prev[2]*q[0]+prev[3]*q[1]+prev[5];
+                                var bx = candidate[0]*q[0]+candidate[1]*q[1]+candidate[4];
+                                var by = candidate[2]*q[0]+candidate[3]*q[1]+candidate[5];
+                                disagreement = Math.max(disagreement, Math.hypot(ax-bx, ay-by));
+                            }
+                            disagreement /= extent;
+                            if (disagreement > LAYOUT_TOL) return null;
+                            continue;
+                        }
+                        transforms[g] = candidate;
                         queue.push(g);
                     }
                 }
