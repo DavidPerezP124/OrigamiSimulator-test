@@ -45,18 +45,12 @@ function initModel(globals){
     thicknessMesh.frustumCulled = false;//geometry updates every frame, skip bounding sphere upkeep
     var thickPositions = null;//per face: 3 top vertices then 3 bottom vertices
     var thickColors = null;
+
     var slabNormals = null;//scratch: unit extrusion normal per face, recomputed every frame
     var slabPanel = null;//face index -> rigid panel index (faces joined by facet creases)
     var slabPanelNormals = null;//scratch: one shared extrusion normal per rigid panel
     var slabPanelMinDot = null;//scratch: worst alignment of a panel face with that normal
     var slabNumPanels = 0;
-    //invisible but raycastable stand-in material for the flat mesh while the thick view is
-    //shown, so node picking/dragging (3dUI, VRInterface) keeps working on the midsurface
-    var raycastProxyMaterial = new THREE.MeshBasicMaterial({
-        colorWrite: false,
-        depthWrite: false,
-        side: THREE.DoubleSide
-    });
 
     clearGeometries();
     setMeshMaterial();
@@ -176,10 +170,11 @@ function initModel(globals){
             globals.colorMode == "color" && globals.meshVisible;
         thicknessMesh.visible = showThickness;
         if (showThickness){
-            //keep the flat mesh visible but non-rendering: the raycaster skips invisible
-            //objects, and node picking/dragging raycasts against getMesh()
-            frontside.material = raycastProxyMaterial;
-            frontside.visible = true;
+            //node picking raycasts the thick mesh itself (see getRaycastMeshes) rather than a
+            //stand-in on the midsurface: under the offset panel construction the plates are
+            //displaced off the midsurface, so a midsurface proxy no longer sits where the
+            //user sees the material and would pick the wrong node
+            frontside.visible = false;
             backside.visible = false;
         } else {
             frontside.material = material;
@@ -194,6 +189,54 @@ function initModel(globals){
 
     function getMesh(){
         return [frontside, backside];
+    }
+
+    //what node picking should raycast against: the thick plates when they are what is on
+    //screen, otherwise the flat surface. always the geometry the user can actually see
+    function getRaycastMeshes(){
+        if (thicknessMesh.visible) return [thicknessMesh];
+        return [frontside, backside];
+    }
+
+    //maps a raycast hit to the index of the nearest node. the flat mesh is indexed by node,
+    //but the thick mesh carries six own vertices per face (top 0,1,2 then bottom 3,4,5), so
+    //its vertex indices have to be translated back
+    function nodeIndexFromIntersection(intersection){
+        if (!intersection || !intersection.face) return -1;
+        var isThick = intersection.object === thicknessMesh;
+        var attribute = isThick ? thicknessMesh.geometry.attributes.position : null;
+        var corners = [intersection.face.a, intersection.face.b, intersection.face.c];
+        //the hit point is in world space while the vertices below are in the object's local
+        //space - they only coincide when the model is untransformed, which is not the case
+        //in the vr scene
+        var point = intersection.point.clone();
+        if (intersection.object && intersection.object.worldToLocal) intersection.object.worldToLocal(point);
+        var best = -1;
+        var bestDist = Infinity;
+        for (var i=0;i<3;i++){
+            var v = corners[i];
+            var x, y, z, nodeIndex;
+            if (isThick){
+                var face = faces[Math.floor(v/6)];
+                if (!face) continue;
+                nodeIndex = face[v%3];
+                x = attribute.array[3*v];
+                y = attribute.array[3*v+1];
+                z = attribute.array[3*v+2];
+            } else {
+                nodeIndex = v;
+                x = positions[3*v];
+                y = positions[3*v+1];
+                z = positions[3*v+2];
+            }
+            var dx = x-point.x, dy = y-point.y, dz = z-point.z;
+            var distSq = dx*dx+dy*dy+dz*dz;
+            if (distSq < bestDist){
+                bestDist = distSq;
+                best = nodeIndex;
+            }
+        }
+        return best;
     }
 
     function getPositionsArray(){
@@ -755,14 +798,18 @@ function initModel(globals){
     }
 
     //true when an export would use the thick slab geometry rather than the midsurface. shared
-    //by makeSaveGEO and getDimensions so the reported size cannot drift from the saved file
-    function exportUsesThickness(){
+    //by makeSaveGEO and getDimensions so the reported size cannot drift from the saved file.
+    //only the stl path carries thickness - saveOBJ and saveFOLD write the midsurface, so
+    //reporting plate thickness and panel offsets in their dialogs would describe a file the
+    //user is not getting
+    function exportUsesThickness(format){
+        if (format !== undefined && format !== "stl") return false;
         if (globals.thickenModel && globals.thickenOffset > 0) return false;//legacy thickening wins
         return globals.simulateThickness && globals.materialThickness > 0;
     }
 
-    function getDimensions(){
-        var source = exportUsesThickness() ? getThicknessGeometry() : geometry;
+    function getDimensions(format){
+        var source = exportUsesThickness(format) ? getThicknessGeometry() : geometry;
         source.computeBoundingBox();
         return source.boundingBox.max.clone().sub(source.boundingBox.min);
     }
@@ -783,6 +830,8 @@ function initModel(globals){
         getPositionsArray: getPositionsArray,
         getColorsArray: getColorsArray,
         getMesh: getMesh,
+        getRaycastMeshes: getRaycastMeshes,//what node picking should hit-test
+        nodeIndexFromIntersection: nodeIndexFromIntersection,
 
         buildModel: buildModel,//load new model
         sync: sync,//update geometry to new model

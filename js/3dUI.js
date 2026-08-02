@@ -52,7 +52,7 @@ function init3DUI(globals) {
 
         var _highlightedObj = null;
         if (!isDragging) {
-            _highlightedObj = checkForIntersections(e, globals.model.getMesh());
+            _highlightedObj = checkForIntersections(e, globals.model.getRaycastMeshes());
             setHighlightedObj(_highlightedObj);
         }  else if (isDragging && highlightedObj){
             if (!draggingNode) {
@@ -95,30 +95,13 @@ function init3DUI(globals) {
     }
 
     function checkForIntersections(e, objects){
-        var _highlightedObj = null;
         var intersections = raycaster.intersectObjects(objects, false);
-        if (intersections.length>0){
-            var face = intersections[0].face;
-            var position = intersections[0].point;
-            var positionsArray = globals.model.getPositionsArray();
-            var vertices = [];
-            vertices.push(new THREE.Vector3(positionsArray[3*face.a], positionsArray[3*face.a+1], positionsArray[3*face.a+2]));
-            vertices.push(new THREE.Vector3(positionsArray[3*face.b], positionsArray[3*face.b+1], positionsArray[3*face.b+2]));
-            vertices.push(new THREE.Vector3(positionsArray[3*face.c], positionsArray[3*face.c+1], positionsArray[3*face.c+2]));
-            var dist = vertices[0].clone().sub(position).lengthSq();
-            var nodeIndex = face.a;
-            for (var i=1;i<3;i++){
-                var _dist = (vertices[i].clone().sub(position)).lengthSq();
-                if (_dist<dist){
-                    dist = _dist;
-                    if (i==1) nodeIndex = face.b;
-                    else nodeIndex = face.c;
-                }
-            }
-            var nodesArray = globals.model.getNodes();
-            _highlightedObj = nodesArray[nodeIndex];
-        }
-        return _highlightedObj;
+        if (intersections.length == 0) return null;
+        //the model owns the mapping: the hit may be on the flat surface, which is indexed by
+        //node, or on the thick plates, which carry their own vertices per face
+        var nodeIndex = globals.model.nodeIndexFromIntersection(intersections[0]);
+        if (nodeIndex < 0) return null;
+        return globals.model.getNodes()[nodeIndex];
     }
 
     function hideHighlighters(){

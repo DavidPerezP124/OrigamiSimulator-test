@@ -105,7 +105,7 @@ function initControls(globals){
     });
 
     setLink("#exportFOLD", function(){
-        updateDimensions();
+        updateDimensions("fold");
         $("#foldFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         var units = globals.foldUnits;
         if (units == "unit") units = "unitless";
@@ -113,21 +113,23 @@ function initControls(globals){
         $('#exportFOLDModal').modal('show');
     });
     setLink("#exportSTL", function(){
-        updateDimensions();
+        updateDimensions("stl");
         $("#stlFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         $('#exportSTLModal').modal('show');
     });
     setLink("#exportOBJ", function(){
-        updateDimensions();
+        updateDimensions("obj");
         $("#objFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         $('#exportOBJModal').modal('show');
     });
     setInput(".exportScale", globals.exportScale, function(val){
         globals.exportScale = val;
-        updateDimensions();
+        updateDimensions(lastExportFormat);//the scale field is shared by all three dialogs
     }, 0);
-    function updateDimensions(){
-        var dim = globals.model.getDimensions();
+    var lastExportFormat = "stl";
+    function updateDimensions(format){
+        if (format !== undefined) lastExportFormat = format;
+        var dim = globals.model.getDimensions(lastExportFormat);
         dim.multiplyScalar(globals.exportScale/globals.scale);
         $(".exportDimensions").html(dim.x.toFixed(2) + " x " + dim.y.toFixed(2) + " x " + dim.z.toFixed(2));
     }

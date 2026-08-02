@@ -357,7 +357,7 @@ function initViveInterface(globals){
                 if (states[i]) continue;//using the gui
 
                 var cast = new THREE.Raycaster(position, tDirection, 0, 1);
-                var intersects = cast.intersectObjects(globals.model.getMesh(), false);
+                var intersects = cast.intersectObjects(globals.model.getRaycastMeshes(), false);
                 if (intersects.length>0){
                     disableLaserPointer(guiHelpers[i]);
                     intersections[i] = true;
@@ -370,20 +370,12 @@ function initViveInterface(globals){
                         continue;
                     }
 
-                    var positionsArray = globals.model.getPositionsArray();
-                    var vertices = [];
-                    vertices.push(new THREE.Vector3(positionsArray[3*face.a], positionsArray[3*face.a+1], positionsArray[3*face.a+2]));
-                    vertices.push(new THREE.Vector3(positionsArray[3*face.b], positionsArray[3*face.b+1], positionsArray[3*face.b+2]));
-                    vertices.push(new THREE.Vector3(positionsArray[3*face.c], positionsArray[3*face.c+1], positionsArray[3*face.c+2]));
-                    var dist = transformToGlobalCoords(vertices[0].clone()).sub(point).lengthSq();
-                    var nodeIndex = face.a;
-                    for (var j=1;j<3;j++){
-                        var _dist = (transformToGlobalCoords(vertices[j].clone()).sub(point)).lengthSq();
-                        if (_dist<dist){
-                            dist = _dist;
-                            if (j<2) nodeIndex = face.b;
-                            else nodeIndex = face.c;
-                        }
+                    //the model owns the mapping: the hit may be on the flat surface, which is
+                    //indexed by node, or on the thick plates, which carry their own vertices
+                    var nodeIndex = globals.model.nodeIndexFromIntersection(intersection);
+                    if (nodeIndex < 0){
+                        nodes[i] = null;
+                        continue;
                     }
                     var nodesArray = globals.model.getNodes();
                     nodes[i] = nodesArray[nodeIndex];
