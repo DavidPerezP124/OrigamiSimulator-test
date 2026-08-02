@@ -45,7 +45,10 @@ function initModel(globals){
     thicknessMesh.frustumCulled = false;//geometry updates every frame, skip bounding sphere upkeep
     var thickPositions = null;//per face: 3 top vertices then 3 bottom vertices
     var thickColors = null;
-    var slabNormals = null;//scratch: unit face normals, recomputed every frame
+    var slabNormals = null;//scratch: unit extrusion normal per face, recomputed every frame
+    var slabPanel = null;//face index -> rigid panel index (faces joined by facet creases)
+    var slabPanelNormals = null;//scratch: one shared extrusion normal per rigid panel
+    var slabNumPanels = 0;
     //invisible but raycastable stand-in material for the flat mesh while the thick view is
     //shown, so node picking/dragging (3dUI, VRInterface) keeps working on the midsurface
     var raycastProxyMaterial = new THREE.MeshBasicMaterial({
@@ -165,8 +168,11 @@ function initModel(globals){
 
     function updateMeshVisibility(){
         //the thick view replaces the zero-thickness surface, except in strain/normal
-        //color modes which rely on the flat mesh's vertex colors
-        var showThickness = globals.simulateThickness && globals.colorMode == "color" && globals.meshVisible;
+        //color modes which rely on the flat mesh's vertex colors. at zero thickness the
+        //slabs would collapse to coincident double sided triangles, so fall back to the
+        //flat mesh - which is also how the solver reads a non-positive thickness
+        var showThickness = globals.simulateThickness && globals.materialThickness > 0 &&
+            globals.colorMode == "color" && globals.meshVisible;
         thicknessMesh.visible = showThickness;
         if (showThickness){
             //keep the flat mesh visible but non-rendering: the raycaster skips invisible
@@ -236,7 +242,18 @@ function initModel(globals){
         thickColors = new Float32Array(numSlabVertices*3);
         slabNormals = new Float32Array(numFaces*3);
 
-        //mark the edge slots that sit inside a rigid panel (shared via a facet crease)
+        //mark the edge slots that sit inside a rigid panel (shared via a facet crease), and
+        //group those faces into panels so they can share one extrusion normal
+        var parent = [];
+        for (var i=0;i<numFaces;i++) parent.push(i);
+        function find(a){
+            while (parent[a] != a){
+                parent[a] = parent[parent[a]];
+                a = parent[a];
+            }
+            return a;
+        }
+
         var interiorEdge = {};
         var numInteriorSlots = 0;
         for (var i=0;i<creases.length;i++){
@@ -245,6 +262,9 @@ function initModel(globals){
             var n1 = crease.edge.nodes[0].getIndex();
             var n2 = crease.edge.nodes[1].getIndex();
             var creaseFaces = [crease.face1Index, crease.face2Index];
+            if (faces[creaseFaces[0]] && faces[creaseFaces[1]]){
+                parent[find(creaseFaces[0])] = find(creaseFaces[1]);
+            }
             for (var s=0;s<2;s++){
                 var face = faces[creaseFaces[s]];
                 if (!face) continue;
@@ -260,6 +280,16 @@ function initModel(globals){
                 }
             }
         }
+
+        slabPanel = new Int32Array(numFaces);
+        var panelIds = {};
+        slabNumPanels = 0;
+        for (var i=0;i<numFaces;i++){
+            var root = find(i);
+            if (panelIds[root] === undefined) panelIds[root] = slabNumPanels++;
+            slabPanel[i] = panelIds[root];
+        }
+        slabPanelNormals = new Float32Array(slabNumPanels*3);
 
         var numWalls = numFaces*3 - numInteriorSlots;
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
@@ -315,27 +345,58 @@ function initModel(globals){
     }
 
     //extrudes each face of the current folded surface into a rigid slab: the face's three
-    //vertices are offset +/- thickness/2 along the face normal, giving plates with square
-    //edges that keep their full thickness at any fold angle (no miter thinning)
+    //vertices are offset +/- thickness/2 along the extrusion normal, giving plates with
+    //square edges that keep their full thickness at any fold angle (no miter thinning).
+    //every triangle of a rigid panel is extruded along one shared normal, so the offset
+    //vertices along their common edges coincide exactly even when the panel flexes a little
+    //under finite panel stiffness - which is what lets the interior walls be omitted
+    //without opening a seam in the exported solid
     function updateThicknessGeometry(){
         if (!thickPositions || !positions) return;
         var numFaces = faces.length;
         var halfThickness = 0.5*globals.materialThickness*globals.scale;//pattern units -> render units
 
+        //area weighted mean normal per rigid panel (the cross product length is twice the
+        //triangle area, so accumulating it unnormalized weights larger facets more)
+        slabPanelNormals.fill(0);
         for (var i=0;i<numFaces;i++){
             var a = faces[i][0], b = faces[i][1], c = faces[i][2];
             var abx = positions[3*b]-positions[3*a], aby = positions[3*b+1]-positions[3*a+1], abz = positions[3*b+2]-positions[3*a+2];
             var acx = positions[3*c]-positions[3*a], acy = positions[3*c+1]-positions[3*a+1], acz = positions[3*c+2]-positions[3*a+2];
             var nx = aby*acz-abz*acy, ny = abz*acx-abx*acz, nz = abx*acy-aby*acx;
-            var length = Math.sqrt(nx*nx+ny*ny+nz*nz);
-            if (length > 0){
-                nx /= length;
-                ny /= length;
-                nz /= length;
-            }
-            slabNormals[3*i] = nx;
+            slabNormals[3*i] = nx;//unnormalized, kept for the degenerate panel fallback
             slabNormals[3*i+1] = ny;
             slabNormals[3*i+2] = nz;
+            var p = 3*slabPanel[i];
+            slabPanelNormals[p] += nx;
+            slabPanelNormals[p+1] += ny;
+            slabPanelNormals[p+2] += nz;
+        }
+        for (var i=0;i<slabNumPanels;i++){
+            var length = Math.sqrt(slabPanelNormals[3*i]*slabPanelNormals[3*i] +
+                slabPanelNormals[3*i+1]*slabPanelNormals[3*i+1] + slabPanelNormals[3*i+2]*slabPanelNormals[3*i+2]);
+            if (length > 0){
+                slabPanelNormals[3*i] /= length;
+                slabPanelNormals[3*i+1] /= length;
+                slabPanelNormals[3*i+2] /= length;
+            }
+        }
+
+        for (var i=0;i<numFaces;i++){
+            var a = faces[i][0], b = faces[i][1], c = faces[i][2];
+            var p = 3*slabPanel[i];
+            var nx = slabPanelNormals[p], ny = slabPanelNormals[p+1], nz = slabPanelNormals[p+2];
+            if (nx == 0 && ny == 0 && nz == 0){//panel folded onto itself, fall back to this face
+                nx = slabNormals[3*i];
+                ny = slabNormals[3*i+1];
+                nz = slabNormals[3*i+2];
+                var faceLength = Math.sqrt(nx*nx+ny*ny+nz*nz);
+                if (faceLength > 0){
+                    nx /= faceLength;
+                    ny /= faceLength;
+                    nz /= faceLength;
+                }
+            }
             var corners = [a, b, c];
             for (var j=0;j<3;j++){
                 var v = corners[j];
