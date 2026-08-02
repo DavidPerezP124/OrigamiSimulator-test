@@ -119,6 +119,14 @@ bridges the plates of each hinge across their offset - the "extensions" of the t
 kinematics of the zero-thickness pattern, which is what lets the compliant solver keep driving the midsurface mesh unchanged.
 </p>
 <p>
+<b>Crease markings in the thick view.</b>  A node has no single position once the material has depth: every incident face
+carries its own pair of surface vertices, and under offset panels those sit at different heights in the stack.  The edge
+lines are therefore kept in two forms and swapped with the view - indexed by node against the midsurface for the flat mesh,
+and against the slab surfaces for the thick mesh, where each edge is drawn once per adjacent face along both that plate's
+top and underside.  Drawing them on the midsurface instead would bury them inside the opaque plates, and under offset
+panels would leave them floating away from the plate they mark.
+</p>
+<p>
 Two consequences are worth expecting rather than mistaking for bugs.  The <b>deployed (unfolded) state is stepped</b>, not a
 flat sheet - panels sit at their stack heights and are joined by extensions; that staircase is what the technique produces.
 And the <b>collision solver is not used in this mode</b>: it measures separation between plate midsurfaces, which offset

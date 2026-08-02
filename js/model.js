@@ -51,6 +51,12 @@ function initModel(globals){
     var slabPanelNormals = null;//scratch: one shared extrusion normal per rigid panel
     var slabPanelMinDot = null;//scratch: worst alignment of a panel face with that normal
     var slabNumPanels = 0;
+    //crease lines exist in two forms: bound to the midsurface nodes for the flat view, and
+    //bound to the slab surfaces for the thick view. the midsurface copy is invisible once the
+    //slabs are drawn - it sits inside the opaque material, and under offset panels it is not
+    //even near the plate it marks - so the two are swapped with the view
+    var flatLineAttributes = null;
+    var thickLineAttributes = null;
 
     clearGeometries();
     setMeshMaterial();
@@ -181,6 +187,7 @@ function initModel(globals){
             frontside.visible = globals.meshVisible;
             backside.visible = globals.colorMode == "color" && globals.meshVisible;
         }
+        updateLineGeometries();
     }
 
     function getGeometry(){
@@ -426,7 +433,72 @@ function initModel(globals){
         var oldGeometry = thicknessMesh.geometry;
         thicknessMesh.geometry = thickGeometry;
         if (oldGeometry) oldGeometry.dispose();
+        buildThicknessLines(thickGeometry.attributes.position, IndexArrayType);
         updateThicknessColors();
+    }
+
+    //crease markings for the thick view. the flat view indexes its lines by node, but a node
+    //has no single position once the material has depth - each incident face carries its own
+    //pair of surface vertices, and under offset panels those sit at different heights. so an
+    //edge is drawn once per adjacent face, along both that plate's top and bottom surface:
+    //boundary edges get the two edges of their single slab, creases get a marking on each of
+    //the two plates that meet there, which is where the fold is actually visible
+    function buildThicknessLines(positionAttribute, IndexArrayType){
+        thickLineAttributes = null;
+        if (!fold || !fold.edges_assignment || !fold.edges_vertices) return;
+
+        var faceCorners = {};//"lo,hi" node pair -> [faceIndex, corner of lo, corner of hi]...
+        for (var i=0;i<faces.length;i++){
+            var face = faces[i];
+            if (!face) continue;
+            for (var j=0;j<3;j++){
+                var k = (j+1)%3;
+                var a = face[j], b = face[k];
+                var pair = a < b ? a+","+b : b+","+a;
+                if (!faceCorners[pair]) faceCorners[pair] = [];
+                faceCorners[pair].push(a < b ? [i, j, k] : [i, k, j]);
+            }
+        }
+
+        var indicesByKey = {};
+        _.each(lines, function(line, key){ indicesByKey[key] = []; });
+        for (var i=0;i<fold.edges_assignment.length;i++){
+            var assignment = fold.edges_assignment[i];
+            if (indicesByKey[assignment] === undefined) continue;
+            var edge = fold.edges_vertices[i];
+            var lo = Math.min(edge[0], edge[1]), hi = Math.max(edge[0], edge[1]);
+            var adjacent = faceCorners[lo+","+hi];
+            if (!adjacent) continue;
+            for (var a=0;a<adjacent.length;a++){
+                var f = adjacent[a][0], c0 = adjacent[a][1], c1 = adjacent[a][2];
+                indicesByKey[assignment].push(6*f+c0, 6*f+c1);//top surface
+                indicesByKey[assignment].push(6*f+3+c0, 6*f+3+c1);//underside
+            }
+        }
+
+        thickLineAttributes = {};
+        _.each(lines, function(line, key){
+            var array = new IndexArrayType(indicesByKey[key].length);
+            for (var i=0;i<array.length;i++) array[i] = indicesByKey[key][i];
+            thickLineAttributes[key] = {
+                position: positionAttribute,//shared, so the per-frame needsUpdate covers both
+                index: new THREE.BufferAttribute(array, 1)
+            };
+        });
+    }
+
+    //point each line set at whichever copy matches what is on screen
+    function updateLineGeometries(){
+        var source = thicknessMesh.visible ? thickLineAttributes : flatLineAttributes;
+        if (!source) return;
+        _.each(lines, function(line, key){
+            var wanted = source[key];
+            if (!line.geometry || !wanted) return;
+            if (line.geometry.attributes.position !== wanted.position){
+                line.geometry.addAttribute('position', wanted.position);
+            }
+            if (line.geometry.index !== wanted.index) line.geometry.setIndex(wanted.index);
+        });
     }
 
     function updateThicknessColors(){
@@ -726,14 +798,18 @@ function initModel(globals){
             lineIndices[assignment].push(edge[0]);
             lineIndices[assignment].push(edge[1]);
         }
+        flatLineAttributes = {};
         _.each(lines, function(line, key){
             var indicesArray = lineIndices[key];
             var indices = new Uint16Array(indicesArray.length);
             for (var i=0;i<indicesArray.length;i++){
                 indices[i] = indicesArray[i];
             }
+            var indexAttribute = new THREE.BufferAttribute(indices, 1);
+            //kept so the thick view can swap the lines onto the slab surfaces and back
+            flatLineAttributes[key] = {position: positionsAttribute, index: indexAttribute};
             lines[key].geometry.addAttribute('position', positionsAttribute);
-            lines[key].geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            lines[key].geometry.setIndex(indexAttribute);
             // lines[key].geometry.attributes.position.needsUpdate = true;
             // lines[key].geometry.index.needsUpdate = true;
             lines[key].geometry.computeBoundingBox();
