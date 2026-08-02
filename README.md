@@ -95,6 +95,10 @@ neighbouring faces.  In practice origami layer stacking is dominated by vertex&n
 limits prevent the configurations where X-crossings typically arise.</li>
 <li>Being a penalty method, deep overlaps under extreme load relax only approximately, and the anti-tunneling test uses one
 substep of velocity history, so a slow sustained squeeze-through is not strictly impossible.</li>
+<li>The pass is a <b>discrete penalty method with a first-order swept guard</b>, not continuous collision detection.  It
+reconstructs the plate's previous position linearly over one substep and tests containment against the plate's current
+triangle; it does not solve for the exact coplanarity time of a deforming triangle.  A plate that both rotates and
+translates substantially within a single substep can therefore still be missed.</li>
 </ul>
 <p>
 <b>Offset panels.</b>  Whenever the layer ordering resolves, the simulator uses the <i>offset panel technique</i> instead of

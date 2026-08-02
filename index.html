@@ -654,12 +654,19 @@
         vec3 contactForce(vec3 p, vec3 vel, vec3 a, vec3 b, vec3 c, vec3 va, vec3 vb, vec3 vc, vec3 normal, out vec3 bary){
             bary = vec3(0.0);
             float dist = dot(p-a, normal);
-            //motion of the node relative to the plate over the last step, so a plate sweeping
-            //across a still node is treated the same as a node crossing a still plate. the
-            //face mean stands in for the contact point's velocity because the barycentric
-            //weights are not known yet; it is refined below once they are
-            vec3 dRel = (vel - (va+vb+vc)/3.0)*u_dt;
-            float prevDist = dist - dot(dRel, normal);
+
+            //where the node sat relative to this plate one step ago, from the plate's actual
+            //previous position rather than a mean velocity: a triangle rotating or deforming
+            //about a still centroid averages to zero velocity while the material near the node
+            //still sweeps through it, and a mean-based guard would call that no motion at all
+            vec3 prevA = a-va*u_dt;
+            vec3 prevP = p-vel*u_dt;
+            vec3 prevNormal = cross((b-vb*u_dt)-prevA, (c-vc*u_dt)-prevA);
+            float prevLen = length(prevNormal);
+            prevNormal = prevLen > 0.000001 ? prevNormal/prevLen : normal;//degenerate previous triangle
+            if (dot(prevNormal, normal) < 0.0) prevNormal = -prevNormal;//keep the sign comparable
+            float prevDist = dot(prevP-prevA, prevNormal);
+
             //a step can carry the pair clean through the whole contact band - out one side to
             //out the other - and testing only the endpoint would let that tunnel silently.
             //keep any step whose endpoints straddle the plate, however far out it landed
@@ -669,11 +676,15 @@
             //where to test containment. for a step that crossed the plate, use the point
             //where it crossed rather than where it ended: a node can enter over the triangle
             //and leave past one of its edges within a single step, and testing the endpoint
-            //alone would call that a miss
+            //alone would call that a miss. the crossing point is taken on the plate's current
+            //plane against its current triangle - first order, not exact coplanarity-time CCD
             vec3 contactPoint = p-dist*normal;
             if (crossed){
                 float span = prevDist-dist;
-                if (abs(span) > 0.000001) contactPoint = (p-dRel) + (prevDist/span)*dRel;
+                if (abs(span) > 0.000001){
+                    vec3 crossPoint = prevP + (prevDist/span)*(p-prevP);
+                    contactPoint = crossPoint - dot(crossPoint-a, normal)*normal;
+                }
             }
 
             //barycentric coords of the contact point on the face plane
@@ -700,14 +711,12 @@
             if (v < margin || w < margin || 1.0-v-w < margin) return vec3(0.0);
             bary = vec3(1.0-v-w, v, w);
 
-            //push toward the side the node approached from: if the last integration step
-            //carried it across the midsurface, the previous signed distance keeps the
-            //response from completing the pass-through; the reference uses the velocity of
-            //the node relative to the contact point so a moving plate cannot tunnel either
-            vec3 relVel = vel - (bary[0]*va + bary[1]*vb + bary[2]*vc);
-            float refDist = dist - dot(relVel, normal)*u_dt;
-            float direction = refDist >= 0.0 ? 1.0 : -1.0;
-            if (abs(refDist) < 0.000001) direction = dist >= 0.0 ? 1.0 : -1.0;
+            //push toward the side the node approached from, so a step that carried it across
+            //the plate is undone rather than completed. prevDist above already measures that
+            //against the plate's real previous position, which covers the plate's own motion
+            //including rotation - no separate velocity reconstruction is needed here
+            float direction = prevDist >= 0.0 ? 1.0 : -1.0;
+            if (abs(prevDist) < 0.000001) direction = dist >= 0.0 ? 1.0 : -1.0;
             //depth of the overlap to undo. a node that swept clean through in one step ends up
             //outside the band, where this would go negative and pull it further through, so
             //charge such a crossing the full band instead

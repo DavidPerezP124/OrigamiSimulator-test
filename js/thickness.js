@@ -265,26 +265,60 @@ function initThickness(globals){
             crease.layerGap = gap > 1 ? gap : 1;
         }
 
-        if (ordered){
+        //the offset construction places every panel at its own height in one shared stack, so
+        //it is only sound when every panel's position is defined relative to every other. that
+        //holds exactly when the folded-crease graph spans all the panels in one piece. a panel
+        //reached by no folded crease, or a second component ordered independently, has no
+        //defined height against the rest - and since offset mode also switches the contact
+        //pass off, nothing would catch them overlapping. fall back in that case
+        var spans = true;
+        for (var i=0;i<numFaces && spans;i++){
+            if (panelIds[find(i)] === undefined) spans = false;//panel in no folded crease
+        }
+        if (spans){
+            var undirected = [];
+            for (var i=0;i<numPanels;i++) undirected.push([]);
+            for (var i=0;i<numPanels;i++){
+                for (var j=0;j<successors[i].length;j++){
+                    undirected[i].push(successors[i][j]);
+                    undirected[successors[i][j]].push(i);
+                }
+            }
+            var seen = new Uint8Array(numPanels);
+            var stack = [0];
+            seen[0] = 1;
+            var reached = numPanels > 0 ? 1 : 0;
+            while (stack.length){
+                var p = stack.pop();
+                for (var j=0;j<undirected[p].length;j++){
+                    var q = undirected[p][j];
+                    if (seen[q]) continue;
+                    seen[q] = 1;
+                    reached++;
+                    stack.push(q);
+                }
+            }
+            if (reached != numPanels) spans = false;//disconnected components
+        }
+        if (!spans) console.warn("thickness: folded creases do not span every panel in one " +
+            "component, offset panels disabled - falling back to fold angle limits and contact");
+
+        if (ordered && spans){
             //keep the full solution: the offset panel construction needs a stack index and an
             //orientation per face, not just the per-crease gaps
             var facePanel = new Int32Array(numFaces);
             var faceParity = new Int32Array(numFaces);
-            var extraPanels = numPanels;
             for (var i=0;i<numFaces;i++){
-                var root = find(i);
-                //faces in no folded crease never got a panel id above - give them their own
-                if (panelIds[root] === undefined) panelIds[root] = extraPanels++;
-                facePanel[i] = panelIds[root];
+                facePanel[i] = panelIds[find(i)];
                 faceParity[i] = parity[i] >= 0 ? 1 : -1;
             }
-            var panelLayer = new Int32Array(extraPanels);
+            var panelLayer = new Int32Array(numPanels);
             for (var i=0;i<numPanels;i++) panelLayer[i] = layer[i];
             layerSolution = {
                 facePanel: facePanel,
                 panelLayer: panelLayer,
                 faceParity: faceParity,
-                numPanels: extraPanels
+                numPanels: numPanels
             };
         }
         return ordered;
