@@ -134,7 +134,10 @@ be computed, offset panels are declined and the model falls back to the angle li
 <b>Fold direction.</b>  The solver drives each crease to <i>targetTheta</i>&nbsp;&times;&nbsp;<i>creasePercent</i> and the
 advanced fold slider runs -100 to 100, so a negative percent reverses every mountain and valley.  The stack order is rebuilt
 when the sign flips; without that the offsets would push plates together instead of apart, and neither contact nor the angle
-limits are active in this mode to catch it.
+limits are active in this mode to catch it.  The rebuild also changes each crease's <i>layerGap</i>, and with it the fold
+angle limit: the rigid solver reads that live, but the dynamic solver bakes it into its crease metadata texture, so the
+rebuild flags that for re-upload.  It runs from the solver loop rather than the thick view, because the limits apply
+whenever thickness is on while the thick mesh is not drawn in the strain and normal colour modes.
 </p>
 <p>
 <b>Crease markings in the thick view.</b>  A node has no single position once the material has depth: every incident face

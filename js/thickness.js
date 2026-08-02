@@ -79,6 +79,10 @@ function initThickness(globals){
     function syncFoldDirection(){
         if (!solutionInputs || currentFoldSign() === solutionSign) return false;
         assignLayerGaps(solutionInputs.creases, solutionInputs.faces, solutionInputs.nodes);
+        //a rebuild changes layerGap, and with it every crease's thetaMax. the rigid solver
+        //reads that live, but the dynamic solver bakes it into u_creaseMeta and only refreshes
+        //on this flag - without it the gpu would keep clamping to the old direction's limits
+        globals.creaseMaterialHasChanged = true;
         return true;
     }
 

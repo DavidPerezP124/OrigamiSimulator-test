@@ -102,6 +102,12 @@ function initDynamicSolver(globals){
             updateLastPosition();
             globals.nodePositionHasChanged = false;
         }
+        //a negative fold percent reverses every crease, so the stack order - and with it every
+        //crease's thetaMax - has to be rebuilt. done here rather than only in the thick view:
+        //the angle limits apply whenever thickness is on, but the thick mesh is not drawn in
+        //the strain and normal color modes, so hooking it to that view would miss those. it
+        //runs before the check below so the refreshed limits upload in the same step
+        if (globals.thickness) globals.thickness.syncFoldDirection();
         if (globals.creaseMaterialHasChanged) {
             updateCreasesMeta();
             globals.creaseMaterialHasChanged = false;
