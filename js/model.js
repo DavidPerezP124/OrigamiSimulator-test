@@ -27,6 +27,13 @@ function initModel(globals){
         F: facetLines,
         B: borderLines
     };
+    //these vertices move every frame, and in the thick view the whole position attribute is
+    //swapped for the slab buffer - neither invalidates the bounding sphere three.js caches for
+    //frustum culling, so a stale sphere could reject a line that is on screen. same reason
+    //thicknessMesh opts out below; the lines are not raycast, so no accurate bounds are needed
+    _.each(lines, function(line){
+        line.frustumCulled = false;
+    });
 
     //extruded view of the folded surface for thickness simulation - every triangle is
     //rendered as an independent rigid slab (per-face extrusion along the face normal), so

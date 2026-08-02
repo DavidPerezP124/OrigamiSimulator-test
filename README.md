@@ -145,7 +145,10 @@ carries its own pair of surface vertices, and under offset panels those sit at d
 lines are therefore kept in two forms and swapped with the view - indexed by node against the midsurface for the flat mesh,
 and against the slab surfaces for the thick mesh, where each edge is drawn once per adjacent face along both that plate's
 top and underside.  Drawing them on the midsurface instead would bury them inside the opaque plates, and under offset
-panels would leave them floating away from the plate they mark.
+panels would leave them floating away from the plate they mark.  The line objects opt out of frustum culling for the same
+reason the thick mesh does: their vertices move every frame and the whole position attribute is swapped when the view
+changes, neither of which invalidates the bounding sphere three.js caches, so a stale sphere could reject a line that is
+on screen.  They are not raycast, so no accurate bounds are needed.
 </p>
 <p>
 Two consequences are worth expecting rather than mistaking for bugs.  The <b>deployed (unfolded) state is stepped</b>, not a
