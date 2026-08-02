@@ -717,11 +717,14 @@
             //including rotation - no separate velocity reconstruction is needed here
             float direction = prevDist >= 0.0 ? 1.0 : -1.0;
             if (abs(prevDist) < 0.000001) direction = dist >= 0.0 ? 1.0 : -1.0;
-            //depth of the overlap to undo. a node that swept clean through in one step ends up
-            //outside the band, where this would go negative and pull it further through, so
-            //charge such a crossing the full band instead
-            float penetration = u_contactThickness-abs(dist);
-            if (penetration <= 0.0) penetration = u_contactThickness;
+
+            //how far the pair has to travel to be clear again. for a crossing that is back
+            //across the plate AND out to the band edge, so the restoring force grows with the
+            //overshoot instead of saturating at one band width
+            //this only makes the response continuous and monotone in the overshoot; measured
+            //against the constant it replaces it does NOT reduce tunnelling (see README) -
+            //a crossing that survives its one substep of response is still lost
+            float penetration = crossed ? abs(dist)+u_contactThickness : u_contactThickness-abs(dist);
             return normal*(direction*u_contactStiffness*penetration);
         }
 

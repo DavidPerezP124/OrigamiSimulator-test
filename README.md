@@ -99,6 +99,15 @@ substep of velocity history, so a slow sustained squeeze-through is not strictly
 reconstructs the plate's previous position linearly over one substep and tests containment against the plate's current
 triangle; it does not solve for the exact coplanarity time of a deforming triangle.  A plate that both rotates and
 translates substantially within a single substep can therefore still be missed.</li>
+<li>The pass keeps <b>no contact state between substeps</b>, so a crossing is detected and answered within the substep it
+happens; a crossing that survives that single response is not recovered afterwards, because the following substep sees
+both endpoints on the far side and no longer registers a contact.  The overlap charged for a crossing grows with the
+overshoot rather than saturating at one band width, which makes the response continuous and monotone, but this was
+<i>measured not to reduce the number of surviving crossings</i> - strengthening a one-substep penalty does not close the
+gap.  Cancelling the approaching normal velocity outright was also tried and is <b>not</b> used: with many simultaneous
+contacts each pair applies its own full cancellation, and the summed impulse diverges.  Removing this restriction needs
+persistent per-pair contact state or true CCD, neither of which is implemented.  Measured on the flapping bird driven
+hard into itself, contact still removes roughly 70% of plate pass-throughs (about 115 without contact, about 34 with).</li>
 </ul>
 <p>
 <b>Offset panels.</b>  Whenever the layer ordering resolves, the simulator uses the <i>offset panel technique</i> instead of
