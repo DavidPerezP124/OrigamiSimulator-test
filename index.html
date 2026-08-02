@@ -278,6 +278,10 @@
                 float targetTheta = creaseMeta[2] * u_creasePercent;
                 targetTheta = clamp(targetTheta, -creaseMeta[3], creaseMeta[3]);//thick material cannot fold completely flat
                 float angForce = creaseMeta[0]*(targetTheta-thetas[0]);// + creaseMeta[1]*thetas[1];
+                //one-sided stiffening when neighboring creases push this fold past its
+                //thickness limit - the plates are in contact at the hinge
+                float overshoot = abs(thetas[0])-creaseMeta[3];
+                if (overshoot > 0.0) angForce -= 2.0*creaseMeta[0]*overshoot*sign(thetas[0]);
 
                 float nodeNum = nodeCreaseMeta[1];//1, 2, 3, 4
 
@@ -491,6 +495,10 @@
                 float targetTheta = creaseMeta[2] * u_creasePercent;
                 targetTheta = clamp(targetTheta, -creaseMeta[3], creaseMeta[3]);//thick material cannot fold completely flat
                 float angForce = creaseMeta[0]*(targetTheta-thetas[0]);// + creaseMeta[1]*thetas[1];
+                //one-sided stiffening when neighboring creases push this fold past its
+                //thickness limit - the plates are in contact at the hinge
+                float overshoot = abs(thetas[0])-creaseMeta[3];
+                if (overshoot > 0.0) angForce -= 2.0*creaseMeta[0]*overshoot*sign(thetas[0]);
 
                 float nodeNum = nodeCreaseMeta[1];//1, 2, 3, 4
 
@@ -593,6 +601,80 @@
 
             vec3 nextPosition = force*u_dt*u_dt/mass[0] + 2.0*lastPosition - lastLastPosition;
             gl_FragColor = vec4(nextPosition,nodeError);//position.a has error info
+        }
+    </script>
+
+    <script id="contactCalcShader" type="x-shader/x-fragment">
+        //node vs plate collision solver: each node is tested against every face of the mesh
+        //(NUM_FACES is baked in at compile time) and repelled along the face normal when the
+        //plates would overlap; the result is the external force field plus contact forces
+        #define NUM_FACES 0
+        precision mediump float;
+        uniform vec2 u_textureDim;
+        uniform vec2 u_textureDimFaces;
+        uniform float u_contactThickness;//min plate separation, in simulation units
+        uniform float u_contactStiffness;
+        uniform sampler2D u_lastPosition;
+        uniform sampler2D u_originalPosition;
+        uniform sampler2D u_externalForces;
+        uniform sampler2D u_faceVertexIndices;
+        uniform sampler2D u_normals;
+
+        vec4 getFromArray(float index1D, vec2 dimensions, sampler2D tex){
+            vec2 index = vec2(mod(index1D, dimensions.x)+0.5, floor(index1D/dimensions.x)+0.5);
+            vec2 scaledIndex = index/dimensions;
+            return texture2D(tex, scaledIndex);
+        }
+
+        vec3 getPosition(float index1D){
+            vec2 index = vec2(mod(index1D, u_textureDim.x)+0.5, floor(index1D/u_textureDim.x)+0.5);
+            vec2 scaledIndex = index/u_textureDim;
+            return texture2D(u_lastPosition, scaledIndex).xyz + texture2D(u_originalPosition, scaledIndex).xyz;
+        }
+
+        void main(){
+            vec2 fragCoord = gl_FragCoord.xy;
+            vec2 scaledFragCoord = fragCoord/u_textureDim;
+
+            vec3 force = texture2D(u_externalForces, scaledFragCoord).xyz;
+            float myIndex = floor(fragCoord.x) + floor(fragCoord.y)*u_textureDim.x;
+            vec3 position = texture2D(u_lastPosition, scaledFragCoord).xyz + texture2D(u_originalPosition, scaledFragCoord).xyz;
+
+            for (int j=0;j<NUM_FACES;j++){
+                vec3 faceVerts = getFromArray(float(j), u_textureDimFaces, u_faceVertexIndices).xyz;
+                //skip faces this node belongs to
+                if (abs(faceVerts[0]-myIndex) < 0.1 || abs(faceVerts[1]-myIndex) < 0.1 || abs(faceVerts[2]-myIndex) < 0.1) continue;
+
+                vec3 a = getPosition(faceVerts[0]);
+                vec3 normal = getFromArray(float(j), u_textureDimFaces, u_normals).xyz;
+                float dist = dot(position-a, normal);
+                if (abs(dist) >= u_contactThickness) continue;
+
+                vec3 b = getPosition(faceVerts[1]);
+                vec3 c = getPosition(faceVerts[2]);
+
+                //barycentric coords of the node projected onto the face plane
+                vec3 v0 = b-a;
+                vec3 v1 = c-a;
+                vec3 v2 = (position-dist*normal)-a;
+                float d00 = dot(v0, v0);
+                float d01 = dot(v0, v1);
+                float d11 = dot(v1, v1);
+                float d20 = dot(v2, v0);
+                float d21 = dot(v2, v1);
+                float denom = d00*d11-d01*d01;
+                if (abs(denom) < 0.0000000001) continue;//degenerate face
+                float v = (d11*d20-d01*d21)/denom;
+                float w = (d00*d21-d01*d20)/denom;
+                //only repel projections strictly inside the face, so nodes sitting on the
+                //boundary of coplanar neighboring faces (e.g. the flat sheet) are ignored
+                float margin = 0.02;
+                if (v < margin || w < margin || 1.0-v-w < margin) continue;
+
+                float direction = dist >= 0.0 ? 1.0 : -1.0;
+                force += normal*(direction*u_contactStiffness*(u_contactThickness-abs(dist)));
+            }
+            gl_FragColor = vec4(force, 0.0);
         }
     </script>
 
@@ -1204,8 +1286,13 @@
                 </label>
                 <div class="indent">
                 Thickness (pattern units): &nbsp;&nbsp;<input id="materialThickness" value="" placeholder="" class="float form-control" type="text"><br/>
+                <label class="checkbox" for="collisionsEnabled">
+                    <input id="collisionsEnabled" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Resolve collisions between plates<br/>
+                </label>
                 <span class="smallTxt">Fold angles are limited so that plates of thick, rigid material cannot pass through
-                each other - flat foldable patterns fold into a stack of plates instead of a plane.</span>
+                each other - flat foldable patterns fold into a stack of plates instead of a plane.  The collision
+                solver additionally repels each vertex from any plate it would overlap.</span>
                 </div>
             </div>
         </div><br/>

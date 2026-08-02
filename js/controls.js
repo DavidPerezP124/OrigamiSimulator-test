@@ -483,6 +483,9 @@ function initControls(globals){
         globals.creaseMaterialHasChanged = true;
         globals.model.updateThicknessView();
     }, 0);
+    setCheckbox("#collisionsEnabled", globals.collisionsEnabled, function(val){
+        globals.collisionsEnabled = val;//read by the solver each step, nothing else to sync
+    });
 
     var creasePercentSlider = setSliderInput("#creasePercent", globals.creasePercent*100, -100, 100, 1, function(val){
         globals.creasePercent = val/100;

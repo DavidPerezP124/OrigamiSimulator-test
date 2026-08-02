@@ -60,6 +60,7 @@ function initGlobals(){
         //material thickness settings
         simulateThickness: false,//limit fold angles so plates of thick material cannot interpenetrate
         materialThickness: 5,//material thickness in crease pattern units
+        collisionsEnabled: true,//node vs plate collision solver (only active when simulating thickness)
 
         strainClip: 5.0,//for strain visualization, % strain that is drawn red
 

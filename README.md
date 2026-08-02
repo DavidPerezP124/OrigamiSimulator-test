@@ -71,6 +71,15 @@ Rigid-Foldable Thick Origami</a>: a hinge spanning a gap <i>g</i> with panel dep
 &pi;&nbsp;&minus;&nbsp;2&nbsp;atan(<i>g</i>/2<i>h</i>).  Like everything else in this compliant simulation the limits are applied as soft
 constraints, so tightly wrapped multi-layer folds may still locally exceed their limit under load from neighboring creases.
 </p>
+<p>
+A penalty-based collision solver backs up the fold angle limits (enabled by default when thickness simulation is on).
+Every simulation substep, an additional GPU pass tests each vertex against every plate of the mesh and applies a repulsion
+force along the plate normal wherever the material would overlap, and hinges pushed past their thickness limit stiffen
+one-sidedly (hinge-line contact).  This is standard penalty-force contact as used in cloth simulation (all-pairs
+vertex&ndash;triangle tests, O(nodes&nbsp;&times;&nbsp;faces) per substep) - it prevents plates from passing through each
+other but, being a penalty method, deep overlaps under extreme load can still relax only approximately.  For very large
+models (&gt;8192 triangles) the contact pass is skipped for performance.
+</p>
 
 <br/>
 <b>External Libraries:</b><br/><br/>

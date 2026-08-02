@@ -52,6 +52,8 @@ function initDynamicSolver(globals){
     }
 
     var programsInited = false;//flag for initial setup
+    var contactProgramReady = false;//collision solver compiled for the current model
+    var MAX_CONTACT_FACES = 8192;//cap on the baked shader loop bound
 
     var textureDim = 0;
     var textureDimEdges = 0;
@@ -145,10 +147,22 @@ function initDynamicSolver(globals){
         //already at textureDimCreasesxtextureDimCreases
         gpuMath.step("updateCreaseGeo", ["u_lastPosition", "u_originalPosition", "u_creaseMeta2"], "u_creaseGeo");
 
+        //collision solver: fold node vs plate contact forces into a copy of the external
+        //force field, then feed that to the integration step in place of u_externalForces
+        var contactEnabled = contactProgramReady && globals.simulateThickness && globals.collisionsEnabled &&
+            globals.materialThickness > 0;
+        if (contactEnabled){
+            gpuMath.setProgram("contactCalc");
+            gpuMath.setSize(textureDim, textureDim);
+            gpuMath.step("contactCalc", ["u_lastPosition", "u_originalPosition", "u_externalForces",
+                "u_faceVertexIndices", "u_normals"], "u_contactForces");
+        }
+        var forcesTexture = contactEnabled ? "u_contactForces" : "u_externalForces";
+
         if (globals.integrationType == "verlet"){
             gpuMath.setProgram("positionCalcVerlet");
             gpuMath.setSize(textureDim, textureDim);
-            gpuMath.step("positionCalcVerlet", ["u_lastPosition", "u_lastLastPosition", "u_lastVelocity", "u_originalPosition", "u_externalForces",
+            gpuMath.step("positionCalcVerlet", ["u_lastPosition", "u_lastLastPosition", "u_lastVelocity", "u_originalPosition", forcesTexture,
                 "u_mass", "u_meta", "u_beamMeta", "u_creaseMeta", "u_nodeCreaseMeta", "u_normals", "u_theta", "u_creaseGeo",
                 "u_meta2", "u_nodeFaceMeta", "u_nominalTriangles"], "u_position");
             gpuMath.step("velocityCalcVerlet", ["u_position", "u_lastPosition", "u_mass"], "u_velocity");
@@ -156,7 +170,7 @@ function initDynamicSolver(globals){
         } else {//euler
             gpuMath.setProgram("velocityCalc");
             gpuMath.setSize(textureDim, textureDim);
-            gpuMath.step("velocityCalc", ["u_lastPosition", "u_lastVelocity", "u_originalPosition", "u_externalForces",
+            gpuMath.step("velocityCalc", ["u_lastPosition", "u_lastVelocity", "u_originalPosition", forcesTexture,
                 "u_mass", "u_meta", "u_beamMeta", "u_creaseMeta", "u_nodeCreaseMeta", "u_normals", "u_theta", "u_creaseGeo",
                 "u_meta2", "u_nodeFaceMeta", "u_nominalTriangles"], "u_velocity");
             gpuMath.step("positionCalc", ["u_velocity", "u_lastPosition", "u_mass"], "u_position");
@@ -385,6 +399,28 @@ function initDynamicSolver(globals){
         gpuMath.setUniformForProgram("copyTexture", "u_orig", 0, "1i");
         gpuMath.setUniformForProgram("copyTexture", "u_textureDim", [textureDim, textureDim], "2f");
 
+        //collision solver: recompiled per model with the face count baked into the loop bound
+        gpuMath.deleteProgram("contactCalc");
+        contactProgramReady = false;
+        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES){
+            gpuMath.initTextureFromData("u_contactForces", textureDim, textureDim, "FLOAT", null, true);
+            gpuMath.initFrameBufferForTexture("u_contactForces", true);
+            var contactShader = document.getElementById("contactCalcShader").text
+                .replace("#define NUM_FACES 0", "#define NUM_FACES " + faces.length);
+            gpuMath.createProgram("contactCalc", vertexShader, contactShader);
+            gpuMath.setUniformForProgram("contactCalc", "u_lastPosition", 0, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_originalPosition", 1, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_externalForces", 2, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_faceVertexIndices", 3, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_normals", 4, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDim", [textureDim, textureDim], "2f");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDimFaces", [textureDimFaces, textureDimFaces], "2f");
+            contactProgramReady = true;
+            updateContactParams();
+        } else if (faces.length > MAX_CONTACT_FACES){
+            console.warn("model has " + faces.length + " faces, collision solver disabled (max " + MAX_CONTACT_FACES + ")");
+        }
+
         gpuMath.createProgram("updateCreaseGeo", vertexShader, document.getElementById("updateCreaseGeo").text);
         gpuMath.setUniformForProgram("updateCreaseGeo", "u_lastPosition", 0, "1i");
         gpuMath.setUniformForProgram("updateCreaseGeo", "u_originalPosition", 1, "1i");
@@ -436,6 +472,7 @@ function initDynamicSolver(globals){
             globals.gpuMath.setProgram("positionCalcVerlet");
             globals.gpuMath.setUniformForProgram("positionCalcVerlet", "u_axialStiffness", globals.axialStiffness, "1f");
             globals.gpuMath.setUniformForProgram("positionCalcVerlet", "u_faceStiffness", globals.faceStiffness, "1f");
+            if (contactProgramReady) updateContactParams();//contact stiffness scales with axial stiffness
             setSolveParams();//recalc dt
         }
     }
@@ -488,6 +525,19 @@ function initDynamicSolver(globals){
             creaseMeta[i*4+3] = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : Math.PI;
         }
         globals.gpuMath.initTextureFromData("u_creaseMeta", textureDimCreases, textureDimCreases, "FLOAT", creaseMeta, true);
+        if (contactProgramReady) updateContactParams();
+    }
+
+    function updateContactParams(){
+        //plates repel when their midsurfaces get closer than 75% of the material thickness -
+        //the fold angle limits are the primary shaping constraint, contact is the safety net
+        var contactThickness = 0.75*globals.materialThickness*globals.scale;
+        //keep contact softer than the axial constraints so it cannot destabilize the sim
+        //(dt is chosen from the axial stiffness)
+        var contactStiffness = 0.5*globals.axialStiffness;
+        globals.gpuMath.setProgram("contactCalc");
+        globals.gpuMath.setUniformForProgram("contactCalc", "u_contactThickness", contactThickness, "1f");
+        globals.gpuMath.setUniformForProgram("contactCalc", "u_contactStiffness", contactStiffness, "1f");
     }
 
     function updateLastPosition(){
