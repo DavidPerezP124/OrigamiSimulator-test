@@ -1525,6 +1525,12 @@
                     <input id="doublesidedSTL" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
                     Double Sided
                 </label>
+                <label class="bigLabel checkbox" for="thickenModel">
+                    <input id="thickenModel" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Thicken Model
+                </label>
+                Thickness: &nbsp;&nbsp;<input id="thickenOffset" value="" placeholder="" class="float form-control" type="text"><br/>
+                <span class="smallTxt">( thickness is in exported units, the surface is offset by half the thickness to each side and the boundary is sealed to make a watertight solid for 3D printing &mdash; when enabled, the double sided option is ignored )</span>
             </div>
             <div class="modal-footer">
                 <button id="doSTLsave" type="button" class="actionButton btn btn-success" data-dismiss="modal">Save</button>

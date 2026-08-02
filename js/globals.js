@@ -73,8 +73,8 @@ function initGlobals(){
         doublesidedSTL: false,
         doublesidedOBJ: false,
         exportScale: 1,
-        thickenModel: true,
-        thickenOffset: 5,
+        thickenModel: false,//give the exported stl a real thickness so it is watertight/printable
+        thickenOffset: 5,//total thickness in exported units (after exportScale is applied)
         polyFacesOBJ: true,
 
         //save fold settings

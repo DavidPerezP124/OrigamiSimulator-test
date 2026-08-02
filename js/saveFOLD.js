@@ -11,10 +11,10 @@ function saveFOLD(){
         return;
     }
 
-    if (globals.exportScale != 1){
-        for (var i=0;i<geo.vertices.length;i++){
-            geo.vertices[i].multiplyScalar(globals.exportScale);
-        }
+    //same scaling as the stl/obj exports and the dimensions readout in the export dialog:
+    //undo the unit-bounding-sphere normalization (globals.scale), then apply the user's export scale
+    for (var i=0;i<geo.vertices.length;i++){
+        geo.vertices[i].multiplyScalar(globals.exportScale/globals.scale);
     }
 
     var filename = $("#foldFilename").val();
@@ -45,6 +45,14 @@ function saveFOLD(){
         var fold = globals.pattern.getFoldData(!useTriangulated);
     } else {
         var fold = globals.curvedFolding.getFoldData(!useTriangulated);
+    }
+    if (!useTriangulated && fold.vertices_coords.length != geo.vertices.length){
+        //the raw (pre-triangulated) fold indexes a different vertex list than the simulated geometry,
+        //e.g. cut edges were split or redundant vertices removed on import - the untriangulated
+        //edges/faces would point at the wrong folded vertices, so fall back to triangulated data
+        globals.warn("This pattern's vertices changed during import, saving FOLD with triangulated faces instead.");
+        if (!globals.includeCurves) fold = globals.pattern.getFoldData(false);
+        else fold = globals.curvedFolding.getFoldData(false);
     }
     json.edges_vertices = fold.edges_vertices;
     var assignment = [];
