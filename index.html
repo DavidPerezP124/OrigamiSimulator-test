@@ -647,9 +647,10 @@
         }
 
         //penalty force pushing a node with position p and velocity vel away from the plate
-        //of face (a, b, c) with unit normal, or vec3(0.0) if they are not in contact;
-        //bary receives the barycentric coords of the node's projection onto the face
-        vec3 contactForce(vec3 p, vec3 vel, vec3 a, vec3 b, vec3 c, vec3 normal, out vec3 bary){
+        //of face (a, b, c) with unit normal and corner velocities (va, vb, vc), or
+        //vec3(0.0) if they are not in contact; bary receives the barycentric coords of
+        //the node's projection onto the face
+        vec3 contactForce(vec3 p, vec3 vel, vec3 a, vec3 b, vec3 c, vec3 va, vec3 vb, vec3 vc, vec3 normal, out vec3 bary){
             bary = vec3(0.0);
             float dist = dot(p-a, normal);
             if (abs(dist) >= u_contactThickness) return vec3(0.0);
@@ -675,8 +676,10 @@
 
             //push toward the side the node approached from: if the last integration step
             //carried it across the midsurface, the previous signed distance keeps the
-            //response from completing the pass-through
-            float refDist = dist - dot(vel, normal)*u_dt;
+            //response from completing the pass-through; the reference uses the velocity of
+            //the node relative to the contact point so a moving plate cannot tunnel either
+            vec3 relVel = vel - (bary[0]*va + bary[1]*vb + bary[2]*vc);
+            float refDist = dist - dot(relVel, normal)*u_dt;
             float direction = refDist >= 0.0 ? 1.0 : -1.0;
             if (abs(refDist) < 0.000001) direction = dist >= 0.0 ? 1.0 : -1.0;
             return normal*(direction*u_contactStiffness*(u_contactThickness-abs(dist)));
@@ -704,7 +707,8 @@
                 vec3 b = getPosition(faceVerts[1]);
                 vec3 c = getPosition(faceVerts[2]);
 
-                force += contactForce(position, velocity, a, b, c, normal, bary);
+                force += contactForce(position, velocity, a, b, c,
+                    getVelocity(faceVerts[0]), getVelocity(faceVerts[1]), getVelocity(faceVerts[2]), normal, bary);
             }
 
             //reactions: every node penetrating a face this node belongs to pushes back on
@@ -722,13 +726,16 @@
                 vec3 a = getPosition(faceVerts[0]);
                 vec3 b = getPosition(faceVerts[1]);
                 vec3 c = getPosition(faceVerts[2]);
+                vec3 va = getVelocity(faceVerts[0]);
+                vec3 vb = getVelocity(faceVerts[1]);
+                vec3 vc = getVelocity(faceVerts[2]);
                 vec3 normal = getFromArray(faceMeta[0], u_textureDimFaces, u_normals).xyz;
 
                 for (int n=0;n<NUM_NODES;n++){
                     float nodeIndex = float(n);
                     if (abs(faceVerts[0]-nodeIndex) < 0.1 || abs(faceVerts[1]-nodeIndex) < 0.1 || abs(faceVerts[2]-nodeIndex) < 0.1) continue;
 
-                    vec3 nodeForce = contactForce(getPosition(nodeIndex), getVelocity(nodeIndex), a, b, c, normal, bary);
+                    vec3 nodeForce = contactForce(getPosition(nodeIndex), getVelocity(nodeIndex), a, b, c, va, vb, vc, normal, bary);
                     float weight = myCorner == 0 ? bary[0] : (myCorner == 1 ? bary[1] : bary[2]);
                     force -= weight*nodeForce;
                 }

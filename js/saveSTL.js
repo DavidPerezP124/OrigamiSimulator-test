@@ -97,7 +97,13 @@ function thickenGeo(geo, thickness){
 }
 
 function makeSaveGEO(doublesided){
-    var geo = new THREE.Geometry().fromBufferGeometry( globals.model.getGeometry() );
+    //when thickness simulation is on (and no explicit thickening is requested), export the
+    //same per-face slab solids shown on screen, so the file keeps the full simulated
+    //thickness at any fold angle instead of the miter-capped offset surface
+    var useSimulatedThickness = globals.simulateThickness && globals.materialThickness > 0 &&
+        !(globals.thickenModel && globals.thickenOffset > 0);
+    var bufferGeo = useSimulatedThickness ? globals.model.getThicknessGeometry() : globals.model.getGeometry();
+    var geo = new THREE.Geometry().fromBufferGeometry( bufferGeo );
 
     if (geo.vertices.length == 0 || geo.faces.length == 0) {
         globals.warn("No geometry to save.");
@@ -112,10 +118,8 @@ function makeSaveGEO(doublesided){
         //thickness is applied after export scaling, so thickenOffset is in exported units
         //the thickened solid is already closed and two-sided, so doublesided is ignored
         thickenGeo(geo, globals.thickenOffset);
-    } else if (globals.simulateThickness && globals.materialThickness > 0){
-        //thickness simulation is on and the user hasn't asked for an explicit thickening -
-        //export the thickness being simulated (pattern units scaled to exported units)
-        thickenGeo(geo, globals.materialThickness*globals.exportScale);
+    } else if (useSimulatedThickness){
+        //already a set of closed slab solids, nothing to add
     } else if (doublesided){
         var numFaces = geo.faces.length;
         for (var i=0;i<numFaces;i++){
