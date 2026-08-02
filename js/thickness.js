@@ -26,6 +26,18 @@
  *    plates interpenetrate. The solver clamps each crease's target angle to this limit, so
  *    a flat-foldable pattern folds into a wedged stack of plates instead of a plane -
  *    i.e. it stays "thick flat foldable".
+ *
+ * Note on what is NOT implemented: that angle limit is derived from Tachi's tapered panel
+ * construction, in which the plates are physically trimmed back near each hinge. We use the
+ * limit as a stand-in for that trimming - the rendered plates are untapered slabs extruded
+ * about the folded midsurface, and every hinge axis lies on the midsurface rather than being
+ * shifted onto a plate surface. Two slabs rotating about a shared centerline necessarily
+ * overlap in a wedge along the crease line, so that wedge is present in the thick view and in
+ * exported solids. Removing it means implementing one of the constructions properly: tapered
+ * panels (convex-clip each slab against its hinges' dihedral bisector planes, variable output
+ * topology) or axis shift / offset panels (move the axes onto the plate surfaces, which lets
+ * plates close fully flat and so changes the simulated fold angles, not just the render).
+ * Both were considered and deliberately left out; see the README.
  */
 
 function initThickness(globals){

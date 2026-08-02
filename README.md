@@ -78,7 +78,7 @@ force along the plate normal wherever the material would overlap, with the equal
 contacted triangle's vertices by barycentric weight; hinges pushed past their thickness limit stiffen one-sidedly
 (hinge-line contact).  This is standard penalty-force contact as used in cloth simulation (all-pairs
 vertex&ndash;triangle tests).  Because it is all-pairs its cost is a product of the model's size - the direct pass is
-O(vertices&nbsp;&times;&nbsp;faces) and the reaction gather O(vertices&sup2;&nbsp;&times;&nbsp;valence) per substep, with 100
+O(vertices&nbsp;&times;&nbsp;faces) and the reaction gather O(vertices&nbsp;&times;&nbsp;&Sigma;valence) per substep, with 100
 substeps per rendered frame - so it is enabled only for models whose total stays inside a fixed budget (roughly a few
 hundred vertices).  Larger models keep their thickness fold angle limits and report in the console that contact was
 skipped; a spatial acceleration structure would be needed to lift that ceiling.
@@ -88,21 +88,32 @@ Known limitations of the contact pass:
 </p>
 <ul>
 <li>It resolves vertex&ndash;triangle contacts only.  Two plates that cross edge-to-edge with no vertex of either projecting
-inside the other (an "X" intersection of two long thin triangles) are not detected; full coverage needs edge&ndash;edge
-tests as well.  In practice origami layer stacking is dominated by vertex&ndash;face contact, and the fold angle limits
-prevent the configurations where X-crossings typically arise.</li>
+inside the other (an "X" intersection of two long thin triangles) are not detected, and a vertex landing exactly on an
+internal triangulation edge has a near-zero barycentric coordinate in both incident triangles and can be missed by both.
+Full coverage needs edge&ndash;edge tests, or a closest-point-on-triangle test paired with topological exclusion of
+neighbouring faces.  In practice origami layer stacking is dominated by vertex&ndash;face contact, and the fold angle
+limits prevent the configurations where X-crossings typically arise.</li>
 <li>Being a penalty method, deep overlaps under extreme load relax only approximately, and the anti-tunneling test uses one
 substep of velocity history, so a slow sustained squeeze-through is not strictly impossible.</li>
 </ul>
 <p>
 In the thick view each triangle is drawn as an independent square-edged slab extruded about the folded midsurface, so plates
-keep their full thickness at every fold angle.  Plates are not trimmed against each other at hinges, so two slabs hinged
-about their shared midsurface edge still overlap in a thin wedge along the crease line, growing as the fold tightens.
-Removing it properly requires convex-clipping every slab against its neighbours' dihedral bisector planes (variable output
-topology), or moving the hinge axis off the midsurface as in Tachi's tapered-panel / axis-shift constructions; simply
-displacing the six slab vertices toward the bisector is not equivalent and measurably introduces new interpenetrations
-where two trimmed edges share a corner.  The wedge is a display artifact only - it does not affect the simulated fold
-angles, which are limited independently as described above.
+keep their full thickness at every fold angle.  <b>Every hinge axis lies on the midsurface</b> - plates rotate about their
+shared centerline - and the plates are not trimmed back near the hinge.  Two slabs rotating about a shared centerline
+necessarily overlap in a thin wedge along the crease line, growing as the fold tightens, so that wedge appears in the thick
+view and in exported solids.
+</p>
+<p>
+This is a deliberate simplification, and it is worth being explicit that it does not match the construction the fold angle
+limit is taken from: Tachi's tapered-panel result assumes the plates <i>are</i> trimmed back at each hinge, and we use the
+angle limit as a stand-in for that trimming.  The two ways to make the geometry consistent are (a) tapered panels -
+convex-clip every slab against its hinges' dihedral bisector planes, which needs variable output topology; simply displacing
+the six slab vertices toward the bisector is not equivalent and measurably introduces new interpenetrations where two
+trimmed edges share a corner - or (b) axis shift / offset panels, moving each hinge axis onto a plate surface as thick-panel
+hardware does, which lets plates close fully flat and therefore changes the simulated fold angles rather than just the
+render, and requires per-vertex consistency conditions that general patterns do not always satisfy.  Neither is implemented.
+As it stands the wedge is a display artifact only - it does not affect the simulated fold angles, which are limited
+independently as described above.
 </p>
 
 <br/>

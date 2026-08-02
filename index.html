@@ -669,9 +669,14 @@
             if (abs(denom) < 0.0000000001) return vec3(0.0);//degenerate face
             float v = (d11*d20-d01*d21)/denom;
             float w = (d00*d21-d01*d20)/denom;
-            //only repel projections strictly inside the face, so nodes sitting on the
-            //boundary of coplanar neighboring faces (e.g. the flat sheet) are ignored
-            float margin = 0.02;
+            //only repel projections strictly inside the face. in a valid non overlapping
+            //triangulation no vertex projects into the interior of a face it is not part of,
+            //so the flat sheet generates no contacts on its own; the margin only has to
+            //absorb rounding noise for a projection sitting exactly on an edge. keep it
+            //small - a wide margin leaves a collision free band along every triangulation
+            //seam, and a vertex landing on an interior edge has a near zero coordinate in
+            //both incident faces and would be rejected by both
+            float margin = 0.002;
             if (v < margin || w < margin || 1.0-v-w < margin) return vec3(0.0);
             bary = vec3(1.0-v-w, v, w);
 

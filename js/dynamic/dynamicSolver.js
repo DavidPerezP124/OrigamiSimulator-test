@@ -54,12 +54,14 @@ function initDynamicSolver(globals){
     var programsInited = false;//flag for initial setup
     var contactProgramReady = false;//collision solver compiled for the current model
     //the contact pass is all-pairs, so its cost is a product of the model's counts, not any
-    //single count: the direct node-vs-face loop is nodes*faces and the reaction gather is
-    //nodes*nodes*maxNodeFaces. budget the total per substep - a model can sit well under any
-    //individual limit and still be unusably slow (100 substeps run per rendered frame)
+    //single count: the direct node-vs-face loop is nodes*faces, and the reaction gather walks
+    //each node's own incident faces against every node, so it is nodes*sum(valence). budget
+    //the total per substep - a model can sit well under any individual limit and still be
+    //unusably slow (100 substeps run per rendered frame)
     var MAX_CONTACT_TESTS = 2000000;//intersection tests per substep
     var MAX_CONTACT_FACES = 8192;//hard ceiling on the baked shader loop bounds
     var maxNodeFaces = 0;//highest face valence in the model, baked into the contact shader
+    var sumNodeFaces = 0;//summed face incidence over all nodes (3*faces for a triangle mesh)
 
     var textureDim = 0;
     var textureDimEdges = 0;
@@ -413,7 +415,11 @@ function initDynamicSolver(globals){
         //the loop bounds (webgl 1 requires compile-time constant loop bounds)
         gpuMath.deleteProgram("contactCalc");
         contactProgramReady = false;
-        var contactTests = nodes.length*faces.length + nodes.length*nodes.length*maxNodeFaces;
+        //the reaction gather breaks out at each node's own valence, so charge the summed
+        //incidence rather than assuming every node carries the model's highest valence -
+        //otherwise a triangulated fan (one hub vertex, common in radial crease patterns) is
+        //charged orders of magnitude more than it actually executes
+        var contactTests = nodes.length*faces.length + nodes.length*sumNodeFaces;
         if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES && nodes.length <= MAX_CONTACT_FACES &&
             contactTests <= MAX_CONTACT_TESTS){
             gpuMath.initTextureFromData("u_contactForces", textureDim, textureDim, "FLOAT", null, true);
@@ -601,6 +607,7 @@ function initDynamicSolver(globals){
             }
             if (nodeFaces[i].length > maxNodeFaces) maxNodeFaces = nodeFaces[i].length;
         }
+        sumNodeFaces = numNodeFaces;//for the collision workload budget
         textureDimNodeFaces = calcTextureSize(numNodeFaces);
 
         var numEdges = 0;
