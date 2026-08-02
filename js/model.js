@@ -527,6 +527,9 @@ function initModel(globals){
     //without opening a seam in the exported solid
     function updateThicknessGeometry(){
         if (!thickPositions || !positions) return;
+        //a negative fold percent reverses every crease, so the stack order has to be rebuilt
+        //before the offsets are read. cheap sign comparison - it only recomputes on a flip
+        if (globals.thickness) globals.thickness.syncFoldDirection();
         var numFaces = faces.length;
         var halfThickness = 0.5*globals.materialThickness*globals.scale;//pattern units -> render units
 

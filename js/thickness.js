@@ -62,6 +62,26 @@ function initThickness(globals){
     //construction consumes - see getPanelOffset below
     var layerSolution = null;
 
+    //the solver drives each crease to targetTheta*creasePercent and the advanced fold slider
+    //runs -100..100, so a negative percent reverses every mountain and valley. the stack order
+    //has to follow, or the offsets push plates together instead of apart - with contact and the
+    //angle limits both switched off in this mode, nothing else would catch it. these remember
+    //what the current solution was built for so it can be rebuilt when the sign flips
+    var solutionSign = 1;
+    var solutionInputs = null;
+
+    function currentFoldSign(){
+        //0 is the neutral point - nothing is folded, and treating it as a flip would thrash
+        return globals.creasePercent < 0 ? -1 : 1;
+    }
+
+    //rebuilds the layer ordering if the fold direction has reversed since it was computed
+    function syncFoldDirection(){
+        if (!solutionInputs || currentFoldSign() === solutionSign) return false;
+        assignLayerGaps(solutionInputs.creases, solutionInputs.faces, solutionInputs.nodes);
+        return true;
+    }
+
     //"no limit" is a large finite angle rather than PI: the solvers clamp target angles to
     //this value and add a restoring force above it, and theta is unwrapped across
     //revolutions, so returning PI would cap hinges dragged past 180 degrees and change
@@ -92,6 +112,9 @@ function initThickness(globals){
 
         var numFaces = faces.length;
         layerSolution = null;//recomputed below; a stale solution must never outlive its model
+        var foldSign = currentFoldSign();
+        solutionSign = foldSign;
+        solutionInputs = {creases: creases, faces: faces, nodes: nodes};
         //layerGap and panelDepth are plain data owned by this module
         for (var i=0;i<creases.length;i++){
             creases[i].layerGap = creases[i].type == 0 ? 0 : 1;
@@ -233,37 +256,42 @@ function initThickness(globals){
             var a = panelIds[find(crease.face1Index)];
             var b = panelIds[find(crease.face2Index)];
             if (a == b) return false;//a panel folded onto itself has no valid ordering
-            var direction = (crease.getTargetTheta() > 0 ? 1 : -1)*parity[crease.face1Index];
+            //foldSign follows the fold slider: a negative percent reverses every crease, so the
+            //whole stack has to invert with it
+            var direction = (crease.getTargetTheta() > 0 ? 1 : -1)*parity[crease.face1Index]*foldSign;
             var lo = direction > 0 ? a : b;
             var hi = direction > 0 ? b : a;
             successors[lo].push(hi);
             inDegree[hi]++;
         }
 
-        //longest-path layering via Kahn's algorithm
+        //longest-path layering via Kahn's algorithm. run repeatedly: overlapping panels left at
+        //one layer get an extra constraint below and the layering is redone
         var layer = [];
-        for (var i=0;i<numPanels;i++) layer.push(0);
-        var queue = [];
-        for (var i=0;i<numPanels;i++){
-            if (inDegree[i] == 0) queue.push(i);
-        }
-        var head = 0;
-        while (head < queue.length){
-            var p = queue[head++];
-            for (var j=0;j<successors[p].length;j++){
-                var q = successors[p][j];
-                if (layer[q] < layer[p]+1) layer[q] = layer[p]+1;
-                if (--inDegree[q] == 0) queue.push(q);
+        function runLayering(){
+            layer = [];
+            var remaining = [];
+            for (var i=0;i<numPanels;i++){
+                layer.push(0);
+                remaining.push(inDegree[i]);
             }
+            var queue = [];
+            for (var i=0;i<numPanels;i++){
+                if (remaining[i] == 0) queue.push(i);
+            }
+            var head = 0;
+            while (head < queue.length){
+                var p = queue[head++];
+                for (var j=0;j<successors[p].length;j++){
+                    var q = successors[p][j];
+                    if (layer[q] < layer[p]+1) layer[q] = layer[p]+1;
+                    if (--remaining[q] == 0) queue.push(q);
+                }
+            }
+            return head == numPanels;
         }
-        var ordered = head == numPanels;
+        var ordered = runLayering();
         if (!ordered) console.warn("thickness: cyclic layer ordering constraints, layer gaps are approximate");
-
-        for (var i=0;i<foldedCreases.length;i++){
-            var crease = foldedCreases[i];
-            var gap = Math.abs(layer[panelIds[find(crease.face1Index)]] - layer[panelIds[find(crease.face2Index)]]);
-            crease.layerGap = gap > 1 ? gap : 1;
-        }
 
         //the offset construction places every panel at its own height in one shared stack, so
         //it is only sound when every panel's position is defined relative to every other. that
@@ -303,7 +331,244 @@ function initThickness(globals){
         if (!spans) console.warn("thickness: folded creases do not span every panel in one " +
             "component, offset panels disabled - falling back to fold angle limits and contact");
 
-        if (ordered && spans){
+        //Longest-path layering only separates panels that a folded crease directly constrains.
+        //Two flaps folded over the same central panel are both one layer above it and therefore
+        //land at the same height, where the offset construction stacks them into each other -
+        //and offset mode has contact switched off, so nothing catches it. Find panels that share
+        //a layer AND overlap in the flat-folded state, force them apart, and re-layer.
+        //
+        //The direction chosen for an added constraint is deterministic but arbitrary: it
+        //guarantees the plates are separated, NOT that the stack is the order a real folder
+        //would use. Deriving that needs taco-taco/taco-tortilla constraints, and deciding
+        //flat-foldability with layer ordering is NP-hard (Akitaya et al.) - see the readme.
+        var MAX_OVERLAP_TESTS = 4000000;
+        var overlapChecked = true;//false if the check had to be skipped, which forces a fallback
+        var separated = true;
+
+        //flat-folded layout: each face maps to the plane by a composition of reflections, one
+        //per folded crease crossed. Same reflection-map argument as the parity pass above, but
+        //carrying the whole isometry [a b c d tx ty] rather than just its sign
+        function foldedLayout(){
+            //the crease pattern is flat but not necessarily in the xy plane - this model's
+            //original positions span z as widely as x and y. Work in the pattern's own plane:
+            //take its normal from a non-degenerate face and build an orthonormal basis in it
+            if (nodes.length == 0) return null;
+            var origin = nodes[0].getOriginalPosition();
+            var nx = 0, ny = 0, nz = 0, ux = 0, uy = 0, uz = 0;
+            for (var i=0;i<numFaces;i++){
+                if (!faces[i]) continue;
+                var a = nodes[faces[i][0]].getOriginalPosition();
+                var b = nodes[faces[i][1]].getOriginalPosition();
+                var c = nodes[faces[i][2]].getOriginalPosition();
+                var abx = b.x-a.x, aby = b.y-a.y, abz = b.z-a.z;
+                var acx = c.x-a.x, acy = c.y-a.y, acz = c.z-a.z;
+                var cx = aby*acz-abz*acy, cy = abz*acx-abx*acz, cz = abx*acy-aby*acx;
+                var cl = Math.sqrt(cx*cx+cy*cy+cz*cz);
+                var al = Math.sqrt(abx*abx+aby*aby+abz*abz);
+                if (cl == 0 || al == 0) continue;
+                nx = cx/cl; ny = cy/cl; nz = cz/cl;
+                ux = abx/al; uy = aby/al; uz = abz/al;
+                origin = a;
+                break;
+            }
+            if (nx == 0 && ny == 0 && nz == 0) return null;//no non-degenerate face
+            var vx = ny*uz-nz*uy, vy = nz*ux-nx*uz, vz = nx*uy-ny*ux;
+
+            function projectPos(p){
+                var dx = p.x-origin.x, dy = p.y-origin.y, dz = p.z-origin.z;
+                return [dx*ux+dy*uy+dz*uz, dx*vx+dy*vy+dz*vz];
+            }
+            var projected = new Array(nodes.length);
+            var minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity, maxOff = 0;
+            for (var i=0;i<nodes.length;i++){
+                var p = nodes[i].getOriginalPosition();
+                var dx = p.x-origin.x, dy = p.y-origin.y, dz = p.z-origin.z;
+                var u = dx*ux+dy*uy+dz*uz;
+                var v = dx*vx+dy*vy+dz*vz;
+                var off = Math.abs(dx*nx+dy*ny+dz*nz);
+                projected[i] = [u, v];
+                if (u < minU) minU = u;
+                if (u > maxU) maxU = u;
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
+                if (off > maxOff) maxOff = off;
+            }
+            var extent = Math.sqrt((maxU-minU)*(maxU-minU) + (maxV-minV)*(maxV-minV));
+            if (!(extent > 0)) return null;
+            //the reflection map is a plane construction - a pattern with real depth has no
+            //flat-folded layout to compare against
+            if (maxOff > extent*1e-6) return null;
+
+            var adjacency = [];
+            for (var i=0;i<numFaces;i++) adjacency.push([]);
+            for (var i=0;i<creases.length;i++){
+                var crease = creases[i];
+                var f = crease.face1Index, g = crease.face2Index;
+                if (!faces[f] || !faces[g]) continue;
+                adjacency[f].push({other: g, crease: crease});
+                adjacency[g].push({other: f, crease: crease});
+            }
+
+            var transforms = new Array(numFaces);
+            for (var s=0;s<numFaces;s++){
+                if (transforms[s]) continue;
+                transforms[s] = [1, 0, 0, 1, 0, 0];//identity at each component's root
+                var queue = [s];
+                var head = 0;
+                while (head < queue.length){
+                    var f = queue[head++];
+                    var T = transforms[f];
+                    for (var j=0;j<adjacency[f].length;j++){
+                        var g = adjacency[f][j].other;
+                        if (transforms[g]) continue;
+                        var crease = adjacency[f][j].crease;
+                        if (crease.type == 0){
+                            transforms[g] = T.slice();//one rigid panel, same placement
+                        } else {
+                            //reflect across the image of the shared crease under T
+                            var e0 = projectPos(crease.edge.nodes[0].getOriginalPosition());
+                            var e1 = projectPos(crease.edge.nodes[1].getOriginalPosition());
+                            var px = T[0]*e0[0] + T[1]*e0[1] + T[4], py = T[2]*e0[0] + T[3]*e0[1] + T[5];
+                            var qx = T[0]*e1[0] + T[1]*e1[1] + T[4], qy = T[2]*e1[0] + T[3]*e1[1] + T[5];
+                            var dx = qx-px, dy = qy-py;
+                            var len = Math.sqrt(dx*dx+dy*dy);
+                            if (len == 0) return null;//degenerate crease, no usable layout
+                            dx /= len; dy /= len;
+                            var m0 = 2*dx*dx-1, m1 = 2*dx*dy, m2 = m1, m3 = 2*dy*dy-1;
+                            //R(v) = M(v-P)+P, composed after T
+                            transforms[g] = [
+                                m0*T[0]+m1*T[2], m0*T[1]+m1*T[3],
+                                m2*T[0]+m3*T[2], m2*T[1]+m3*T[3],
+                                m0*(T[4]-px)+m1*(T[5]-py)+px,
+                                m2*(T[4]-px)+m3*(T[5]-py)+py
+                            ];
+                        }
+                        queue.push(g);
+                    }
+                }
+            }
+
+            var xy = new Array(numFaces);
+            var boxes = new Array(numFaces);
+            for (var i=0;i<numFaces;i++){
+                var T = transforms[i];
+                var tri = [];
+                var bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+                for (var k=0;k<3;k++){
+                    var q = projected[faces[i][k]];
+                    if (!q) return null;
+                    var x = T[0]*q[0] + T[1]*q[1] + T[4];
+                    var y = T[2]*q[0] + T[3]*q[1] + T[5];
+                    tri.push([x, y]);
+                    if (x < bx0) bx0 = x;
+                    if (x > bx1) bx1 = x;
+                    if (y < by0) by0 = y;
+                    if (y > by1) by1 = y;
+                }
+                xy[i] = tri;
+                boxes[i] = [bx0, by0, bx1, by1];
+            }
+            return {xy: xy, boxes: boxes, eps: extent*1e-4};
+        }
+
+        //separating axis test; a gap of eps or less counts as separated, so panels that merely
+        //touch along an edge or at a vertex are not forced apart
+        function trianglesOverlap(A, B, eps){
+            for (var t=0;t<2;t++){
+                var P = t == 0 ? A : B;
+                for (var i=0;i<3;i++){
+                    var j = (i+1)%3;
+                    var ax = -(P[j][1]-P[i][1]), ay = P[j][0]-P[i][0];
+                    var len = Math.sqrt(ax*ax+ay*ay);
+                    if (len == 0) continue;
+                    ax /= len; ay /= len;
+                    var minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
+                    for (var k=0;k<3;k++){
+                        var pa = A[k][0]*ax + A[k][1]*ay;
+                        if (pa < minA) minA = pa;
+                        if (pa > maxA) maxA = pa;
+                        var pb = B[k][0]*ax + B[k][1]*ay;
+                        if (pb < minB) minB = pb;
+                        if (pb > maxB) maxB = pb;
+                    }
+                    if (minA >= maxB-eps || minB >= maxA-eps) return false;
+                }
+            }
+            return true;
+        }
+
+        if (ordered && numPanels > 0){
+            var layout = foldedLayout();
+            if (!layout){
+                overlapChecked = false;
+            } else {
+                var tests = 0;
+                var findOverlaps = function(){
+                    var byLayer = {};
+                    for (var i=0;i<numFaces;i++){
+                        var pid = panelIds[find(i)];
+                        if (pid === undefined) continue;
+                        var key = layer[pid];
+                        if (byLayer[key] === undefined) byLayer[key] = [];
+                        byLayer[key].push(i);
+                    }
+                    var seen = {};
+                    var pairs = [];
+                    for (var key in byLayer){
+                        var group = byLayer[key];
+                        for (var a=0;a<group.length;a++){
+                            for (var b=a+1;b<group.length;b++){
+                                var fa = group[a], fb = group[b];
+                                var pa = panelIds[find(fa)], pb = panelIds[find(fb)];
+                                if (pa == pb) continue;//one panel is rigid, it cannot self-stack
+                                var pairKey = pa < pb ? pa+","+pb : pb+","+pa;
+                                if (seen[pairKey]) continue;
+                                if (++tests > MAX_OVERLAP_TESTS) return null;
+                                var ba = layout.boxes[fa], bb = layout.boxes[fb];
+                                if (ba[2] < bb[0] || bb[2] < ba[0] || ba[3] < bb[1] || bb[3] < ba[1]) continue;
+                                if (!trianglesOverlap(layout.xy[fa], layout.xy[fb], layout.eps)) continue;
+                                seen[pairKey] = true;
+                                pairs.push([Math.min(pa, pb), Math.max(pa, pb)]);
+                            }
+                        }
+                    }
+                    return pairs;
+                };
+                //each round forces every colliding pair apart, so the layering deepens until no
+                //two overlapping panels share a height or the constraints turn cyclic
+                separated = false;
+                for (var round=0;round<=numPanels;round++){
+                    var pairs = findOverlaps();
+                    if (pairs === null){
+                        overlapChecked = false;
+                        break;
+                    }
+                    if (pairs.length == 0){
+                        separated = true;
+                        break;
+                    }
+                    for (var i=0;i<pairs.length;i++){
+                        successors[pairs[i][0]].push(pairs[i][1]);
+                        inDegree[pairs[i][1]]++;
+                    }
+                    ordered = runLayering();
+                    if (!ordered) break;
+                }
+            }
+        }
+        if (!overlapChecked) console.warn("thickness: could not check the flat-folded layout for " +
+            "overlapping panels, offset panels disabled - falling back to fold angle limits and contact");
+        else if (!separated) console.warn("thickness: overlapping panels could not be separated into " +
+            "distinct layers, offset panels disabled - falling back to fold angle limits and contact");
+
+        for (var i=0;i<foldedCreases.length;i++){
+            var crease = foldedCreases[i];
+            var gap = Math.abs(layer[panelIds[find(crease.face1Index)]] - layer[panelIds[find(crease.face2Index)]]);
+            crease.layerGap = gap > 1 ? gap : 1;
+        }
+
+
+        if (ordered && spans && overlapChecked && separated){
             //keep the full solution: the offset panel construction needs a stack index and an
             //orientation per face, not just the per-crease gaps
             var facePanel = new Int32Array(numFaces);
@@ -352,6 +617,7 @@ function initThickness(globals){
         getCreaseThetaMax: getCreaseThetaMax,
         getLayerSolution: getLayerSolution,
         offsetPanelsActive: offsetPanelsActive,
-        getFaceOffset: getFaceOffset
+        getFaceOffset: getFaceOffset,
+        syncFoldDirection: syncFoldDirection
     }
 }

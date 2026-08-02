@@ -119,6 +119,24 @@ bridges the plates of each hinge across their offset - the "extensions" of the t
 kinematics of the zero-thickness pattern, which is what lets the compliant solver keep driving the midsurface mesh unchanged.
 </p>
 <p>
+<b>Separating panels that share a layer.</b>  Longest-path layering only separates panels that a folded crease directly
+constrains, so two flaps folded over the same central panel both land one layer above it - at the <i>same</i> height, where
+the offset construction would stack them into each other with the contact pass switched off.  The layering therefore also
+computes the <b>flat-folded layout</b> (each face placed by the composition of reflections along the creases crossed to
+reach it, in the crease pattern's own plane), finds panels that share a layer <i>and</i> overlap there, adds an ordering
+constraint between each such pair, and re-runs the layering until no overlapping pair shares a height.  The direction
+chosen for an added constraint is deterministic but arbitrary: it guarantees the plates are <b>separated</b>, not that the
+stack is the order a real folder would use - deriving that needs taco-taco/taco-tortilla constraints, and the exact problem
+is NP-hard.  If the added constraints turn the graph cyclic, or the pattern is not planar enough for a flat-folded layout to
+be computed, offset panels are declined and the model falls back to the angle limits plus contact.
+</p>
+<p>
+<b>Fold direction.</b>  The solver drives each crease to <i>targetTheta</i>&nbsp;&times;&nbsp;<i>creasePercent</i> and the
+advanced fold slider runs -100 to 100, so a negative percent reverses every mountain and valley.  The stack order is rebuilt
+when the sign flips; without that the offsets would push plates together instead of apart, and neither contact nor the angle
+limits are active in this mode to catch it.
+</p>
+<p>
 <b>Crease markings in the thick view.</b>  A node has no single position once the material has depth: every incident face
 carries its own pair of surface vertices, and under offset panels those sit at different heights in the stack.  The edge
 lines are therefore kept in two forms and swapped with the view - indexed by node against the midsurface for the flat mesh,
