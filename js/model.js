@@ -46,8 +46,6 @@ function initModel(globals){
     var thickPositions = null;//per face: 3 top vertices then 3 bottom vertices
     var thickColors = null;
     var slabNormals = null;//scratch: unit face normals, recomputed every frame
-    var slabNeighbors = null;//per face edge slot: neighbor face index across a hinge, or -1
-    var slabMaxShift = null;//per face edge slot: cap on the miter trim so slabs cannot invert
     //invisible but raycastable stand-in material for the flat mesh while the thick view is
     //shown, so node picking/dragging (3dUI, VRInterface) keeps working on the midsurface
     var raycastProxyMaterial = new THREE.MeshBasicMaterial({
@@ -235,45 +233,6 @@ function initModel(globals){
         thickColors = new Float32Array(numSlabVertices*3);
         slabNormals = new Float32Array(numFaces*3);
 
-        //map each face's edge slots to the neighboring face across a hinge, so slab edges
-        //can be trimmed to the dihedral bisector plane (mitered joints instead of two
-        //square slabs interpenetrating in a wedge along the crease line)
-        slabNeighbors = new Int32Array(numFaces*3).fill(-1);
-        slabMaxShift = new Float32Array(numFaces*3);
-        for (var i=0;i<creases.length;i++){
-            var crease = creases[i];
-            if (crease.type == 0) continue;//facet creases stay coplanar, no miter needed
-            var n1 = crease.edge.nodes[0].getIndex();
-            var n2 = crease.edge.nodes[1].getIndex();
-            var creaseFaces = [crease.face1Index, crease.face2Index];
-            for (var s=0;s<2;s++){
-                var face = faces[creaseFaces[s]];
-                for (var j=0;j<3;j++){
-                    var a = face[j];
-                    var b = face[(j+1)%3];
-                    if ((a == n1 && b == n2) || (a == n2 && b == n1)){
-                        slabNeighbors[creaseFaces[s]*3+j] = creaseFaces[1-s];
-                    }
-                }
-            }
-        }
-        //trim cap: a fraction of the opposite corner's altitude over each edge
-        for (var i=0;i<numFaces;i++){
-            for (var j=0;j<3;j++){
-                if (slabNeighbors[3*i+j] < 0) continue;
-                var pa = vertices[faces[i][j]];
-                var pb = vertices[faces[i][(j+1)%3]];
-                var pc = vertices[faces[i][(j+2)%3]];
-                var edge = pb.clone().sub(pa);
-                var edgeLength = edge.length();
-                if (edgeLength == 0) continue;
-                var toOpposite = pc.clone().sub(pa);
-                var proj = toOpposite.dot(edge)/edgeLength;
-                var altitudeSq = toOpposite.lengthSq()-proj*proj;
-                slabMaxShift[3*i+j] = 0.45*Math.sqrt(altitudeSq > 0 ? altitudeSq : 0);
-            }
-        }
-
         var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
         var thickIndices = new IndexArrayType(numFaces*8*3);//top + bottom + 3 walls of 2 triangles each
         var index = 0;
@@ -361,60 +320,17 @@ function initModel(globals){
             }
         }
 
-        //miter the slab edges at hinges: trim each slab to the bisector plane of the
-        //dihedral (volume trimming), so folded plates form clean mitered joints instead of
-        //overlapping in a wedge along the crease line
-        for (var i=0;i<numFaces;i++){
-            var n1x = slabNormals[3*i], n1y = slabNormals[3*i+1], n1z = slabNormals[3*i+2];
-            for (var j=0;j<3;j++){
-                var neighbor = slabNeighbors[3*i+j];
-                if (neighbor < 0) continue;
-                var k = (j+1)%3;
-                var va = faces[i][j], vb = faces[i][k];
-                var ex = positions[3*vb]-positions[3*va], ey = positions[3*vb+1]-positions[3*va+1], ez = positions[3*vb+2]-positions[3*va+2];
-                var edgeLength = Math.sqrt(ex*ex+ey*ey+ez*ez);
-                if (edgeLength == 0) continue;
-                ex /= edgeLength;
-                ey /= edgeLength;
-                ez /= edgeLength;
-                //in-plane directions from the hinge into each plate: u1 = n1 x e, u2 = e x n2
-                //(the neighbor traverses this edge in the opposite direction)
-                var u1x = n1y*ez-n1z*ey, u1y = n1z*ex-n1x*ez, u1z = n1x*ey-n1y*ex;
-                var n2x = slabNormals[3*neighbor], n2y = slabNormals[3*neighbor+1], n2z = slabNormals[3*neighbor+2];
-                var u2x = ey*n2z-ez*n2y, u2y = ez*n2x-ex*n2z, u2z = ex*n2y-ey*n2x;
-                var dx = u1x+u2x, dy = u1y+u2y, dz = u1z+u2z;//bisector direction of the joint
-                if (dx*dx+dy*dy+dz*dz < 0.000001) continue;//flat, nothing to trim
-                //normal of the bisector plane (contains the hinge line and d)
-                var bx = ey*dz-ez*dy, by = ez*dx-ex*dz, bz = ex*dy-ey*dx;
-                var bLength = Math.sqrt(bx*bx+by*by+bz*bz);
-                if (bLength == 0) continue;
-                bx /= bLength;
-                by /= bLength;
-                bz /= bLength;
-                var denom = u1x*bx+u1y*by+u1z*bz;
-                if (Math.abs(denom) < 0.000001) continue;//nearly flat-folded, trim would diverge
-                //where the offset surfaces meet the bisector plane, measured along u1
-                var shift = -halfThickness*(n1x*bx+n1y*by+n1z*bz)/denom;
-                //miter limit: near-flat folds would extend the outer corner without bound,
-                //so cap the shift (bevel) - like an svg stroke miterlimit
-                var maxShift = Math.min(slabMaxShift[3*i+j], 3*halfThickness);
-                if (shift > maxShift) shift = maxShift;
-                else if (shift < -maxShift) shift = -maxShift;
-                var sx = u1x*shift, sy = u1y*shift, sz = u1z*shift;
-                var slots = [6*i+j, 6*i+k];//this edge's two slab corners
-                for (var s=0;s<2;s++){
-                    var top = 3*slots[s];
-                    var bottom = 3*(slots[s]+3);
-                    thickPositions[top] += sx;
-                    thickPositions[top+1] += sy;
-                    thickPositions[top+2] += sz;
-                    thickPositions[bottom] -= sx;
-                    thickPositions[bottom+1] -= sy;
-                    thickPositions[bottom+2] -= sz;
-                }
-            }
-        }
-
+        //note: plates are NOT trimmed against each other at hinges. two slabs hinged about
+        //their shared midsurface edge do overlap in a thin wedge along the crease line, and
+        //the textbook fix is to trim both to the bisector plane of the dihedral. that trim
+        //cannot be expressed by moving these 6 vertices though: at a corner where two
+        //mitered edges meet, the correct solid is the intersection of both half spaces,
+        //while displacing the shared vertex along both edge directions extends it past its
+        //neighbors instead - measured on the flapping bird, a vertex-displacement miter
+        //introduced 7-11 vertex penetrations at 70-100% folded where untrimmed slabs had
+        //none. doing it properly means convex-clipping each slab against every neighbor
+        //plane with variable output topology; until then square slabs are the more accurate
+        //of the two, and the residual hinge wedge is documented in the readme.
         thicknessMesh.geometry.attributes.position.needsUpdate = true;
         thicknessMesh.geometry.computeVertexNormals();
         thicknessMesh.geometry.attributes.normal.needsUpdate = true;

@@ -612,6 +612,7 @@
         //conserves momentum; the result is the external force field plus contact forces
         #define NUM_FACES 0
         #define NUM_NODES 0
+        #define MAX_NODE_FACES 0
         precision mediump float;
         uniform vec2 u_textureDim;
         uniform vec2 u_textureDimFaces;
@@ -714,7 +715,7 @@
             //reactions: every node penetrating a face this node belongs to pushes back on
             //this node, weighted by this corner's barycentric coordinate
             vec2 meta2 = texture2D(u_meta2, scaledFragCoord).xy;
-            for (int j=0;j<32;j++){//for all faces of this node
+            for (int j=0;j<MAX_NODE_FACES;j++){//for all faces of this node (bound baked in at compile time)
                 if (j >= int(meta2[1])) break;
                 vec4 faceMeta = getFromArray(meta2[0]+float(j), u_textureDimNodeFaces, u_nodeFaceMeta);//[faceIndex, a, b, c]
                 vec3 faceVerts = getFromArray(faceMeta[0], u_textureDimFaces, u_faceVertexIndices).xyz;

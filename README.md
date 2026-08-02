@@ -74,11 +74,32 @@ constraints, so tightly wrapped multi-layer folds may still locally exceed their
 <p>
 A penalty-based collision solver backs up the fold angle limits (enabled by default when thickness simulation is on).
 Every simulation substep, an additional GPU pass tests each vertex against every plate of the mesh and applies a repulsion
-force along the plate normal wherever the material would overlap, and hinges pushed past their thickness limit stiffen
-one-sidedly (hinge-line contact).  This is standard penalty-force contact as used in cloth simulation (all-pairs
-vertex&ndash;triangle tests, O(nodes&nbsp;&times;&nbsp;faces) per substep) - it prevents plates from passing through each
-other but, being a penalty method, deep overlaps under extreme load can still relax only approximately.  For very large
-models (&gt;8192 triangles) the contact pass is skipped for performance.
+force along the plate normal wherever the material would overlap, with the equal and opposite reaction distributed over the
+contacted triangle's vertices by barycentric weight; hinges pushed past their thickness limit stiffen one-sidedly
+(hinge-line contact).  This is standard penalty-force contact as used in cloth simulation (all-pairs
+vertex&ndash;triangle tests, O(nodes&nbsp;&times;&nbsp;faces) per substep).  For very large models (&gt;8192 triangles or
+vertices) the contact pass is skipped for performance.
+</p>
+<p>
+Known limitations of the contact pass:
+</p>
+<ul>
+<li>It resolves vertex&ndash;triangle contacts only.  Two plates that cross edge-to-edge with no vertex of either projecting
+inside the other (an "X" intersection of two long thin triangles) are not detected; full coverage needs edge&ndash;edge
+tests as well.  In practice origami layer stacking is dominated by vertex&ndash;face contact, and the fold angle limits
+prevent the configurations where X-crossings typically arise.</li>
+<li>Being a penalty method, deep overlaps under extreme load relax only approximately, and the anti-tunneling test uses one
+substep of velocity history, so a slow sustained squeeze-through is not strictly impossible.</li>
+</ul>
+<p>
+In the thick view each triangle is drawn as an independent square-edged slab extruded about the folded midsurface, so plates
+keep their full thickness at every fold angle.  Plates are not trimmed against each other at hinges, so two slabs hinged
+about their shared midsurface edge still overlap in a thin wedge along the crease line, growing as the fold tightens.
+Removing it properly requires convex-clipping every slab against its neighbours' dihedral bisector planes (variable output
+topology), or moving the hinge axis off the midsurface as in Tachi's tapered-panel / axis-shift constructions; simply
+displacing the six slab vertices toward the bisector is not equivalent and measurably introduces new interpenetrations
+where two trimmed edges share a corner.  The wedge is a display artifact only - it does not affect the simulated fold
+angles, which are limited independently as described above.
 </p>
 
 <br/>

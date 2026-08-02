@@ -54,6 +54,7 @@ function initDynamicSolver(globals){
     var programsInited = false;//flag for initial setup
     var contactProgramReady = false;//collision solver compiled for the current model
     var MAX_CONTACT_FACES = 8192;//cap on the baked shader loop bound
+    var maxNodeFaces = 0;//highest face valence in the model, baked into the contact shader
 
     var textureDim = 0;
     var textureDimEdges = 0;
@@ -412,7 +413,8 @@ function initDynamicSolver(globals){
             gpuMath.initFrameBufferForTexture("u_contactForces", true);
             var contactShader = document.getElementById("contactCalcShader").text
                 .replace("#define NUM_FACES 0", "#define NUM_FACES " + faces.length)
-                .replace("#define NUM_NODES 0", "#define NUM_NODES " + nodes.length);
+                .replace("#define NUM_NODES 0", "#define NUM_NODES " + nodes.length)
+                .replace("#define MAX_NODE_FACES 0", "#define MAX_NODE_FACES " + maxNodeFaces);
             gpuMath.createProgram("contactCalc", vertexShader, contactShader);
             gpuMath.setUniformForProgram("contactCalc", "u_lastPosition", 0, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_originalPosition", 1, "1i");
@@ -576,6 +578,7 @@ function initDynamicSolver(globals){
 
         var numNodeFaces = 0;
         var nodeFaces = [];
+        maxNodeFaces = 0;
         for (var i=0;i<nodes.length;i++){
             nodeFaces.push([]);
             for (var j=0;j<faces.length;j++){
@@ -584,6 +587,7 @@ function initDynamicSolver(globals){
                     numNodeFaces++;
                 }
             }
+            if (nodeFaces[i].length > maxNodeFaces) maxNodeFaces = nodeFaces[i].length;
         }
         textureDimNodeFaces = calcTextureSize(numNodeFaces);
 
