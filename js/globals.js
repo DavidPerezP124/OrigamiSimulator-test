@@ -57,6 +57,12 @@ function initGlobals(){
         density: 1,
         integrationType: "euler",
 
+        //material thickness settings
+        simulateThickness: false,//limit fold angles so plates of thick material cannot interpenetrate
+        materialThickness: 5,//material thickness in crease pattern units
+        collisionsEnabled: true,//node vs plate collision solver (only active when simulating thickness)
+        collisionsAvailable: true,//false when the current model is too large for the all-pairs contact pass
+
         strainClip: 5.0,//for strain visualization, % strain that is drawn red
 
         //import pattern settings

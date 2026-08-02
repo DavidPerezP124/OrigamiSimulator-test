@@ -27,6 +27,43 @@ function initModel(globals){
         F: facetLines,
         B: borderLines
     };
+    //these vertices move every frame, and in the thick view the whole position attribute is
+    //swapped for the slab buffer - neither invalidates the bounding sphere three.js caches for
+    //frustum culling, so a stale sphere could reject a line that is on screen. same reason
+    //thicknessMesh opts out below; the lines are not raycast, so no accurate bounds are needed
+    _.each(lines, function(line){
+        line.frustumCulled = false;
+    });
+
+    //extruded view of the folded surface for thickness simulation - every triangle is
+    //rendered as an independent rigid slab (per-face extrusion along the face normal), so
+    //plates keep square edges and their full thickness at any fold angle, with no miter
+    //thinning at sharp creases; tops are color1, undersides color2 via vertex colors
+    var thicknessMaterial = new THREE.MeshPhongMaterial({
+        flatShading: true,
+        vertexColors: THREE.VertexColors,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: 0.5,
+        polygonOffsetUnits: 1
+    });
+    var thicknessMesh = new THREE.Mesh(new THREE.BufferGeometry(), thicknessMaterial);
+    thicknessMesh.visible = false;
+    thicknessMesh.frustumCulled = false;//geometry updates every frame, skip bounding sphere upkeep
+    var thickPositions = null;//per face: 3 top vertices then 3 bottom vertices
+    var thickColors = null;
+
+    var slabNormals = null;//scratch: unit extrusion normal per face, recomputed every frame
+    var slabPanel = null;//face index -> rigid panel index (faces joined by facet creases)
+    var slabPanelNormals = null;//scratch: one shared extrusion normal per rigid panel
+    var slabPanelMinDot = null;//scratch: worst alignment of a panel face with that normal
+    var slabNumPanels = 0;
+    //crease lines exist in two forms: bound to the midsurface nodes for the flat view, and
+    //bound to the slab surfaces for the thick view. the midsurface copy is invisible once the
+    //slabs are drawn - it sits inside the opaque material, and under offset panels it is not
+    //even near the plate it marks - so the two are swapped with the view
+    var flatLineAttributes = null;
+    var thickLineAttributes = null;
 
     clearGeometries();
     setMeshMaterial();
@@ -61,6 +98,7 @@ function initModel(globals){
 
     globals.threeView.sceneAddModel(frontside);
     globals.threeView.sceneAddModel(backside);
+    globals.threeView.sceneAddModel(thicknessMesh);
     _.each(lines, function(line){
         globals.threeView.sceneAddModel(line);
     });
@@ -123,6 +161,8 @@ function initModel(globals){
         }
         frontside.material = material;
         backside.material = material2;
+        updateThicknessColors();
+        updateMeshVisibility();
     }
 
     function updateEdgeVisibility(){
@@ -135,8 +175,26 @@ function initModel(globals){
     }
 
     function updateMeshVisibility(){
-        frontside.visible = globals.meshVisible;
-        backside.visible = globals.colorMode == "color" && globals.meshVisible;
+        //the thick view replaces the zero-thickness surface, except in strain/normal
+        //color modes which rely on the flat mesh's vertex colors. at zero thickness the
+        //slabs would collapse to coincident double sided triangles, so fall back to the
+        //flat mesh - which is also how the solver reads a non-positive thickness
+        var showThickness = globals.simulateThickness && globals.materialThickness > 0 &&
+            globals.colorMode == "color" && globals.meshVisible;
+        thicknessMesh.visible = showThickness;
+        if (showThickness){
+            //node picking raycasts the thick mesh itself (see getRaycastMeshes) rather than a
+            //stand-in on the midsurface: under the offset panel construction the plates are
+            //displaced off the midsurface, so a midsurface proxy no longer sits where the
+            //user sees the material and would pick the wrong node
+            frontside.visible = false;
+            backside.visible = false;
+        } else {
+            frontside.material = material;
+            frontside.visible = globals.meshVisible;
+            backside.visible = globals.colorMode == "color" && globals.meshVisible;
+        }
+        updateLineGeometries();
     }
 
     function getGeometry(){
@@ -145,6 +203,54 @@ function initModel(globals){
 
     function getMesh(){
         return [frontside, backside];
+    }
+
+    //what node picking should raycast against: the thick plates when they are what is on
+    //screen, otherwise the flat surface. always the geometry the user can actually see
+    function getRaycastMeshes(){
+        if (thicknessMesh.visible) return [thicknessMesh];
+        return [frontside, backside];
+    }
+
+    //maps a raycast hit to the index of the nearest node. the flat mesh is indexed by node,
+    //but the thick mesh carries six own vertices per face (top 0,1,2 then bottom 3,4,5), so
+    //its vertex indices have to be translated back
+    function nodeIndexFromIntersection(intersection){
+        if (!intersection || !intersection.face) return -1;
+        var isThick = intersection.object === thicknessMesh;
+        var attribute = isThick ? thicknessMesh.geometry.attributes.position : null;
+        var corners = [intersection.face.a, intersection.face.b, intersection.face.c];
+        //the hit point is in world space while the vertices below are in the object's local
+        //space - they only coincide when the model is untransformed, which is not the case
+        //in the vr scene
+        var point = intersection.point.clone();
+        if (intersection.object && intersection.object.worldToLocal) intersection.object.worldToLocal(point);
+        var best = -1;
+        var bestDist = Infinity;
+        for (var i=0;i<3;i++){
+            var v = corners[i];
+            var x, y, z, nodeIndex;
+            if (isThick){
+                var face = faces[Math.floor(v/6)];
+                if (!face) continue;
+                nodeIndex = face[v%3];
+                x = attribute.array[3*v];
+                y = attribute.array[3*v+1];
+                z = attribute.array[3*v+2];
+            } else {
+                nodeIndex = v;
+                x = positions[3*v];
+                y = positions[3*v+1];
+                z = positions[3*v+2];
+            }
+            var dx = x-point.x, dy = y-point.y, dz = z-point.z;
+            var distSq = dx*dx+dy*dy+dz*dz;
+            if (distSq < bestDist){
+                bestDist = distSq;
+                best = nodeIndex;
+            }
+        }
+        return best;
     }
 
     function getPositionsArray(){
@@ -177,6 +283,382 @@ function initModel(globals){
         geometry.attributes.position.needsUpdate = true;
         if (globals.colorMode == "axialStrain") geometry.attributes.color.needsUpdate = true;
         if (globals.userInteractionEnabled || globals.vrEnabled) geometry.computeBoundingBox();
+        if (thicknessMesh.visible) updateThicknessGeometry();
+    }
+
+    //builds the slab mesh topology: for each face, 3 top vertices, 3 bottom vertices, a top
+    //and bottom triangle, and side walls on every edge except the facet creases interior to
+    //a rigid panel - those neighbours are coplanar and their slabs already meet there, so
+    //walling them would bury a pair of coincident, oppositely wound faces inside the panel
+    //and make exported STLs non-manifold. positions are filled in every frame by
+    //updateThicknessGeometry, colors are static per topology
+    function buildThicknessGeometry(){
+        var numFaces = faces.length;
+        var numSlabVertices = numFaces*6;
+
+        thickPositions = new Float32Array(numSlabVertices*3);
+        thickColors = new Float32Array(numSlabVertices*3);
+        slabNormals = new Float32Array(numFaces*3);
+
+        //mark the edge slots that sit inside a rigid panel (shared via a facet crease), and
+        //group those faces into panels so they can share one extrusion normal
+        var parent = [];
+        for (var i=0;i<numFaces;i++) parent.push(i);
+        function find(a){
+            while (parent[a] != a){
+                parent[a] = parent[parent[a]];
+                a = parent[a];
+            }
+            return a;
+        }
+
+        var noWall = {};//edge slots that must not get a side wall
+        var numSkippedWalls = 0;
+        function skipWall(faceIndex, slot){
+            if (noWall[faceIndex*3+slot]) return;
+            noWall[faceIndex*3+slot] = true;
+            numSkippedWalls++;
+        }
+        //the slot of the edge running between two nodes of a face, or -1
+        function edgeSlot(faceIndex, n1, n2){
+            var face = faces[faceIndex];
+            if (!face) return -1;
+            for (var j=0;j<3;j++){
+                var a = face[j], b = face[(j+1)%3];
+                if ((a == n1 && b == n2) || (a == n2 && b == n1)) return j;
+            }
+            return -1;
+        }
+
+        for (var i=0;i<creases.length;i++){
+            var crease = creases[i];
+            if (crease.type != 0) continue;//hinges are handled with the connectors below
+            var n1 = crease.edge.nodes[0].getIndex();
+            var n2 = crease.edge.nodes[1].getIndex();
+            var creaseFaces = [crease.face1Index, crease.face2Index];
+            if (faces[creaseFaces[0]] && faces[creaseFaces[1]]){
+                parent[find(creaseFaces[0])] = find(creaseFaces[1]);
+            }
+            for (var s=0;s<2;s++){
+                var slot = edgeSlot(creaseFaces[s], n1, n2);
+                if (slot >= 0) skipWall(creaseFaces[s], slot);
+            }
+        }
+
+        slabPanel = new Int32Array(numFaces);
+        var panelIds = {};
+        slabNumPanels = 0;
+        for (var i=0;i<numFaces;i++){
+            var root = find(i);
+            if (panelIds[root] === undefined) panelIds[root] = slabNumPanels++;
+            slabPanel[i] = panelIds[root];
+        }
+        slabPanelNormals = new Float32Array(slabNumPanels*3);
+        slabPanelMinDot = new Float32Array(slabNumPanels);
+
+        //offset panels sit at different heights in the stack, so the two plates of a hinge no
+        //longer meet at the crease. collect the corner slots on each side so a connector - the
+        //"extension" of the offset panel technique - can be emitted to bridge them, otherwise
+        //the model renders as loose floating plates and exports as a non-solid. only built
+        //when a layer solution exists, which is exactly when the offsets are ever applied
+        var connectors = [];
+        if (globals.thickness && globals.thickness.getLayerSolution()){
+            for (var i=0;i<creases.length;i++){
+                var crease = creases[i];
+                if (crease.type == 0) continue;//facet creases stay coplanar within a panel
+                var f = crease.face1Index, g = crease.face2Index;
+                if (!faces[f] || !faces[g]) continue;
+                var n1 = crease.edge.nodes[0].getIndex();
+                var n2 = crease.edge.nodes[1].getIndex();
+                var cf1 = faces[f].indexOf(n1), cf2 = faces[f].indexOf(n2);
+                var cg1 = faces[g].indexOf(n1), cg2 = faces[g].indexOf(n2);
+                if (cf1 < 0 || cf2 < 0 || cg1 < 0 || cg2 < 0) continue;
+                connectors.push([6*f+cf1, 6*f+cf2, 6*g+cg1, 6*g+cg2]);
+                //the connector's own walls close both slabs here. leaving the slab end walls
+                //in as well would put three triangles on the shared edge - slab face, slab
+                //wall and connector ribbon - making the exported solid non-manifold
+                var sf = edgeSlot(f, n1, n2), sg = edgeSlot(g, n1, n2);
+                if (sf >= 0) skipWall(f, sf);
+                if (sg >= 0) skipWall(g, sg);
+            }
+        }
+
+        var numWalls = numFaces*3 - numSkippedWalls;
+        var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
+        //top + bottom + 2 triangles per wall + 8 triangles per connector box
+        var thickIndices = new IndexArrayType((numFaces*2 + numWalls*2 + connectors.length*8)*3);
+        var index = 0;
+        for (var i=0;i<numFaces;i++){
+            var top = 6*i;
+            var bottom = 6*i+3;
+            thickIndices[index++] = top;
+            thickIndices[index++] = top+1;
+            thickIndices[index++] = top+2;
+            thickIndices[index++] = bottom;//reversed winding so the underside faces out
+            thickIndices[index++] = bottom+2;
+            thickIndices[index++] = bottom+1;
+            for (var j=0;j<3;j++){//outward-facing side walls
+                if (noWall[3*i+j]) continue;
+                var k = (j+1)%3;
+                thickIndices[index++] = top+j;
+                thickIndices[index++] = bottom+j;
+                thickIndices[index++] = bottom+k;
+                thickIndices[index++] = top+j;
+                thickIndices[index++] = bottom+k;
+                thickIndices[index++] = top+k;
+            }
+        }
+
+        //connector boxes: bridge the two plates of each hinge across their stack offset. the
+        //four corners on each side (top/bottom at each end of the crease) form a box, closed
+        //by a top ribbon, a bottom ribbon and a cap at each end of the crease line
+        for (var i=0;i<connectors.length;i++){
+            var f1 = connectors[i][0], f2 = connectors[i][1];//face1 top slots at crease nodes 1,2
+            var g1 = connectors[i][2], g2 = connectors[i][3];//face2 top slots at the same nodes
+            var quads = [
+                [f1, f2, g2, g1],//top ribbon
+                [f1+3, g1+3, g2+3, f2+3],//bottom ribbon, reversed so it faces out
+                [f1, g1, g1+3, f1+3],//cap at crease node 1
+                [f2, f2+3, g2+3, g2]//cap at crease node 2, reversed
+            ];
+            for (var q=0;q<4;q++){
+                var quad = quads[q];
+                thickIndices[index++] = quad[0];
+                thickIndices[index++] = quad[1];
+                thickIndices[index++] = quad[2];
+                thickIndices[index++] = quad[0];
+                thickIndices[index++] = quad[2];
+                thickIndices[index++] = quad[3];
+            }
+        }
+
+        var thickGeometry = new THREE.BufferGeometry();
+        thickGeometry.dynamic = true;
+        thickGeometry.addAttribute('position', new THREE.BufferAttribute(thickPositions, 3));
+        thickGeometry.addAttribute('color', new THREE.BufferAttribute(thickColors, 3));
+        thickGeometry.setIndex(new THREE.BufferAttribute(thickIndices, 1));
+        var oldGeometry = thicknessMesh.geometry;
+        thicknessMesh.geometry = thickGeometry;
+        if (oldGeometry) oldGeometry.dispose();
+        buildThicknessLines(thickGeometry.attributes.position, IndexArrayType);
+        updateThicknessColors();
+    }
+
+    //crease markings for the thick view. the flat view indexes its lines by node, but a node
+    //has no single position once the material has depth - each incident face carries its own
+    //pair of surface vertices, and under offset panels those sit at different heights. so an
+    //edge is drawn once per adjacent face, along both that plate's top and bottom surface:
+    //boundary edges get the two edges of their single slab, creases get a marking on each of
+    //the two plates that meet there, which is where the fold is actually visible
+    function buildThicknessLines(positionAttribute, IndexArrayType){
+        thickLineAttributes = null;
+        if (!fold || !fold.edges_assignment || !fold.edges_vertices) return;
+
+        var faceCorners = {};//"lo,hi" node pair -> [faceIndex, corner of lo, corner of hi]...
+        for (var i=0;i<faces.length;i++){
+            var face = faces[i];
+            if (!face) continue;
+            for (var j=0;j<3;j++){
+                var k = (j+1)%3;
+                var a = face[j], b = face[k];
+                var pair = a < b ? a+","+b : b+","+a;
+                if (!faceCorners[pair]) faceCorners[pair] = [];
+                faceCorners[pair].push(a < b ? [i, j, k] : [i, k, j]);
+            }
+        }
+
+        var indicesByKey = {};
+        _.each(lines, function(line, key){ indicesByKey[key] = []; });
+        for (var i=0;i<fold.edges_assignment.length;i++){
+            var assignment = fold.edges_assignment[i];
+            if (indicesByKey[assignment] === undefined) continue;
+            var edge = fold.edges_vertices[i];
+            var lo = Math.min(edge[0], edge[1]), hi = Math.max(edge[0], edge[1]);
+            var adjacent = faceCorners[lo+","+hi];
+            if (!adjacent) continue;
+            for (var a=0;a<adjacent.length;a++){
+                var f = adjacent[a][0], c0 = adjacent[a][1], c1 = adjacent[a][2];
+                indicesByKey[assignment].push(6*f+c0, 6*f+c1);//top surface
+                indicesByKey[assignment].push(6*f+3+c0, 6*f+3+c1);//underside
+            }
+        }
+
+        thickLineAttributes = {};
+        _.each(lines, function(line, key){
+            var array = new IndexArrayType(indicesByKey[key].length);
+            for (var i=0;i<array.length;i++) array[i] = indicesByKey[key][i];
+            thickLineAttributes[key] = {
+                position: positionAttribute,//shared, so the per-frame needsUpdate covers both
+                index: new THREE.BufferAttribute(array, 1)
+            };
+        });
+    }
+
+    //point each line set at whichever copy matches what is on screen
+    function updateLineGeometries(){
+        var source = thicknessMesh.visible ? thickLineAttributes : flatLineAttributes;
+        if (!source) return;
+        _.each(lines, function(line, key){
+            var wanted = source[key];
+            if (!line.geometry || !wanted) return;
+            if (line.geometry.attributes.position !== wanted.position){
+                line.geometry.addAttribute('position', wanted.position);
+            }
+            if (line.geometry.index !== wanted.index) line.geometry.setIndex(wanted.index);
+        });
+    }
+
+    function updateThicknessColors(){
+        if (!thickColors) return;
+        var color1 = new THREE.Color("#" + globals.color1);
+        var color2 = new THREE.Color("#" + globals.color2);
+        for (var i=0;i<thickColors.length/3;i+=6){
+            for (var j=0;j<3;j++){//plate tops get the front color, undersides the back color
+                thickColors[3*(i+j)] = color1.r;
+                thickColors[3*(i+j)+1] = color1.g;
+                thickColors[3*(i+j)+2] = color1.b;
+                thickColors[3*(i+j+3)] = color2.r;
+                thickColors[3*(i+j+3)+1] = color2.g;
+                thickColors[3*(i+j+3)+2] = color2.b;
+            }
+        }
+        if (thicknessMesh.geometry.attributes.color) thicknessMesh.geometry.attributes.color.needsUpdate = true;
+    }
+
+    //extrudes each face of the current folded surface into a rigid slab: the face's three
+    //vertices are offset +/- thickness/2 along the extrusion normal, giving plates with
+    //square edges that keep their full thickness at any fold angle (no miter thinning).
+    //every triangle of a rigid panel is extruded along one shared normal, so the offset
+    //vertices along their common edges coincide exactly even when the panel flexes a little
+    //under finite panel stiffness - which is what lets the interior walls be omitted
+    //without opening a seam in the exported solid
+    function updateThicknessGeometry(){
+        if (!thickPositions || !positions) return;
+        //a negative fold percent reverses every crease, so the stack order has to be rebuilt
+        //before the offsets are read. cheap sign comparison - it only recomputes on a flip
+        if (globals.thickness) globals.thickness.syncFoldDirection();
+        var numFaces = faces.length;
+        var halfThickness = 0.5*globals.materialThickness*globals.scale;//pattern units -> render units
+
+        //area weighted mean normal per rigid panel (the cross product length is twice the
+        //triangle area, so accumulating it unnormalized weights larger facets more)
+        slabPanelNormals.fill(0);
+        for (var i=0;i<numFaces;i++){
+            var a = faces[i][0], b = faces[i][1], c = faces[i][2];
+            var abx = positions[3*b]-positions[3*a], aby = positions[3*b+1]-positions[3*a+1], abz = positions[3*b+2]-positions[3*a+2];
+            var acx = positions[3*c]-positions[3*a], acy = positions[3*c+1]-positions[3*a+1], acz = positions[3*c+2]-positions[3*a+2];
+            var nx = aby*acz-abz*acy, ny = abz*acx-abx*acz, nz = abx*acy-aby*acx;
+            slabNormals[3*i] = nx;//unnormalized, kept for the degenerate panel fallback
+            slabNormals[3*i+1] = ny;
+            slabNormals[3*i+2] = nz;
+            var p = 3*slabPanel[i];
+            slabPanelNormals[p] += nx;
+            slabPanelNormals[p+1] += ny;
+            slabPanelNormals[p+2] += nz;
+        }
+        for (var i=0;i<slabNumPanels;i++){
+            var length = Math.sqrt(slabPanelNormals[3*i]*slabPanelNormals[3*i] +
+                slabPanelNormals[3*i+1]*slabPanelNormals[3*i+1] + slabPanelNormals[3*i+2]*slabPanelNormals[3*i+2]);
+            if (length > 0){
+                slabPanelNormals[3*i] /= length;
+                slabPanelNormals[3*i+1] /= length;
+                slabPanelNormals[3*i+2] /= length;
+            }
+            slabPanelMinDot[i] = 1;
+        }
+
+        //offsetting along the shared normal would thin a flexed facet to
+        //thickness*dot(panelNormal, faceNormal) measured normal to its own plane. divide
+        //that cosine back out using the panel's worst-aligned face, so every face of the
+        //panel is at least the requested thickness (exactly it when the panel is planar,
+        //and the offset stays common to the panel so the welded seams hold)
+        for (var i=0;i<numFaces;i++){
+            var faceLength = Math.sqrt(slabNormals[3*i]*slabNormals[3*i] +
+                slabNormals[3*i+1]*slabNormals[3*i+1] + slabNormals[3*i+2]*slabNormals[3*i+2]);
+            if (faceLength <= 0) continue;//degenerate triangle
+            var panel = slabPanel[i];
+            var dot = (slabNormals[3*i]*slabPanelNormals[3*panel] +
+                slabNormals[3*i+1]*slabPanelNormals[3*panel+1] +
+                slabNormals[3*i+2]*slabPanelNormals[3*panel+2])/faceLength;
+            if (dot < slabPanelMinDot[panel]) slabPanelMinDot[panel] = dot;
+        }
+        for (var i=0;i<slabNumPanels;i++){
+            //a panel bent past 120 degrees would send the correction to infinity, so cap it
+            if (!(slabPanelMinDot[i] > 0.5)) slabPanelMinDot[i] = 0.5;
+        }
+
+        //offset panel construction: each panel's plate is shifted off the midsurface by its
+        //own height in the folded stack, so panels no longer share a hinge centerline and can
+        //close fully flat. zero when the pattern has no orderable flat-folded state, which
+        //leaves the plates centered on the midsurface and the fold angle limits in force
+        var offsetPanels = globals.thickness ? globals.thickness.offsetPanelsActive() : false;
+
+        for (var i=0;i<numFaces;i++){
+            var a = faces[i][0], b = faces[i][1], c = faces[i][2];
+            var panel = slabPanel[i];
+            var p = 3*panel;
+            var ux = slabPanelNormals[p], uy = slabPanelNormals[p+1], uz = slabPanelNormals[p+2];//unit
+            if (ux == 0 && uy == 0 && uz == 0){//panel normals cancelled, fall back to this face
+                var fallback = Math.sqrt(slabNormals[3*i]*slabNormals[3*i] +
+                    slabNormals[3*i+1]*slabNormals[3*i+1] + slabNormals[3*i+2]*slabNormals[3*i+2]);
+                if (fallback > 0){
+                    ux = slabNormals[3*i]/fallback;
+                    uy = slabNormals[3*i+1]/fallback;
+                    uz = slabNormals[3*i+2]/fallback;
+                }
+            }
+            var scale = halfThickness/slabPanelMinDot[panel];
+            var nx = ux*scale, ny = uy*scale, nz = uz*scale;
+            //pattern units -> render units, along the same normal the plate is extruded on
+            var shift = offsetPanels ? globals.thickness.getFaceOffset(i)*globals.scale : 0;
+            var sx = ux*shift, sy = uy*shift, sz = uz*shift;
+            var corners = [a, b, c];
+            for (var j=0;j<3;j++){
+                var v = corners[j];
+                var top = 3*(6*i+j);
+                var bottom = 3*(6*i+j+3);
+                thickPositions[top] = positions[3*v] + sx + nx;
+                thickPositions[top+1] = positions[3*v+1] + sy + ny;
+                thickPositions[top+2] = positions[3*v+2] + sz + nz;
+                thickPositions[bottom] = positions[3*v] + sx - nx;
+                thickPositions[bottom+1] = positions[3*v+1] + sy - ny;
+                thickPositions[bottom+2] = positions[3*v+2] + sz - nz;
+            }
+        }
+
+        //note: plates are NOT trimmed against each other at hinges. two slabs hinged about
+        //their shared midsurface edge do overlap in a thin wedge along the crease line, and
+        //the textbook fix is to trim both to the bisector plane of the dihedral. that trim
+        //cannot be expressed by moving these 6 vertices though: at a corner where two
+        //mitered edges meet, the correct solid is the intersection of both half spaces,
+        //while displacing the shared vertex along both edge directions extends it past its
+        //neighbors instead - measured on the flapping bird, a vertex-displacement miter
+        //introduced 7-11 vertex penetrations at 70-100% folded where untrimmed slabs had
+        //none. doing it properly means convex-clipping each slab against every neighbor
+        //plane with variable output topology; until then square slabs are the more accurate
+        //of the two, and the residual hinge wedge is documented in the readme.
+        thicknessMesh.geometry.attributes.position.needsUpdate = true;
+        thicknessMesh.geometry.computeVertexNormals();
+        thicknessMesh.geometry.attributes.normal.needsUpdate = true;
+        //Mesh.raycast rejects against the cached bounding sphere before it tests any
+        //triangle, and the cache is not invalidated by marking positions dirty. now that
+        //picking hit-tests this mesh, a stale sphere would make plates unselectable as soon
+        //as folding moved them outside it. the box is cleared for the same reason - anything
+        //reading geometry.boundingBox would otherwise see the shape from an earlier frame
+        thicknessMesh.geometry.computeBoundingSphere();
+        thicknessMesh.geometry.boundingBox = null;
+    }
+
+    function updateThicknessView(){
+        updateMeshVisibility();
+        if (thicknessMesh.visible) updateThicknessGeometry();
+    }
+
+    //for exports: the per-face slab geometry matching the on-screen thick view,
+    //refreshed from the current fold state even if the thick view is hidden
+    function getThicknessGeometry(){
+        updateThicknessGeometry();
+        return thicknessMesh.geometry;
     }
 
     function startSolver(){
@@ -275,6 +757,10 @@ function initModel(globals){
                 creases.length));
         }
 
+        //estimate how many material layers each hinge spans in the flat-folded state and
+        //each hinge's panel depth, used to limit fold angles when thickness simulation is on
+        if (globals.thickness) globals.thickness.assignLayerGaps(creases, faces, nodes);
+
         vertices = [];
         for (var i=0;i<nodes.length;i++){
             vertices.push(nodes[i].getOriginalPosition());
@@ -322,14 +808,18 @@ function initModel(globals){
             lineIndices[assignment].push(edge[0]);
             lineIndices[assignment].push(edge[1]);
         }
+        flatLineAttributes = {};
         _.each(lines, function(line, key){
             var indicesArray = lineIndices[key];
             var indices = new Uint16Array(indicesArray.length);
             for (var i=0;i<indicesArray.length;i++){
                 indices[i] = indicesArray[i];
             }
+            var indexAttribute = new THREE.BufferAttribute(indices, 1);
+            //kept so the thick view can swap the lines onto the slab surfaces and back
+            flatLineAttributes[key] = {position: positionsAttribute, index: indexAttribute};
             lines[key].geometry.addAttribute('position', positionsAttribute);
-            lines[key].geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            lines[key].geometry.setIndex(indexAttribute);
             // lines[key].geometry.attributes.position.needsUpdate = true;
             // lines[key].geometry.index.needsUpdate = true;
             lines[key].geometry.computeBoundingBox();
@@ -367,8 +857,11 @@ function initModel(globals){
             edges[i].recalcOriginalLength();
         }
 
+        buildThicknessGeometry();
+
         updateEdgeVisibility();
         updateMeshVisibility();
+        if (thicknessMesh.visible) updateThicknessGeometry();
 
         syncSolver();
 
@@ -397,9 +890,21 @@ function initModel(globals){
         return creases;
     }
 
-    function getDimensions(){
-        geometry.computeBoundingBox();
-        return geometry.boundingBox.max.clone().sub(geometry.boundingBox.min);
+    //true when an export would use the thick slab geometry rather than the midsurface. shared
+    //by makeSaveGEO and getDimensions so the reported size cannot drift from the saved file.
+    //only the stl path carries thickness - saveOBJ and saveFOLD write the midsurface, so
+    //reporting plate thickness and panel offsets in their dialogs would describe a file the
+    //user is not getting
+    function exportUsesThickness(format){
+        if (format !== undefined && format !== "stl") return false;
+        if (globals.thickenModel && globals.thickenOffset > 0) return false;//legacy thickening wins
+        return globals.simulateThickness && globals.materialThickness > 0;
+    }
+
+    function getDimensions(format){
+        var source = exportUsesThickness(format) ? getThicknessGeometry() : geometry;
+        source.computeBoundingBox();
+        return source.boundingBox.max.clone().sub(source.boundingBox.min);
     }
 
     return {
@@ -413,9 +918,13 @@ function initModel(globals){
         getFaces: getFaces,
         getCreases: getCreases,
         getGeometry: getGeometry,//for save stl
+        getThicknessGeometry: getThicknessGeometry,//for save stl with thickness simulation on
+        exportUsesThickness: exportUsesThickness,//which of the two the export will pick
         getPositionsArray: getPositionsArray,
         getColorsArray: getColorsArray,
         getMesh: getMesh,
+        getRaycastMeshes: getRaycastMeshes,//what node picking should hit-test
+        nodeIndexFromIntersection: nodeIndexFromIntersection,
 
         buildModel: buildModel,//load new model
         sync: sync,//update geometry to new model
@@ -425,6 +934,7 @@ function initModel(globals){
         setMeshMaterial: setMeshMaterial,
         updateEdgeVisibility: updateEdgeVisibility,
         updateMeshVisibility: updateMeshVisibility,
+        updateThicknessView: updateThicknessView,
 
         getDimensions: getDimensions//for save stl
     }

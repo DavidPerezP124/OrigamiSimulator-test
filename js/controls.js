@@ -105,7 +105,7 @@ function initControls(globals){
     });
 
     setLink("#exportFOLD", function(){
-        updateDimensions();
+        updateDimensions("fold");
         $("#foldFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         var units = globals.foldUnits;
         if (units == "unit") units = "unitless";
@@ -113,21 +113,23 @@ function initControls(globals){
         $('#exportFOLDModal').modal('show');
     });
     setLink("#exportSTL", function(){
-        updateDimensions();
+        updateDimensions("stl");
         $("#stlFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         $('#exportSTLModal').modal('show');
     });
     setLink("#exportOBJ", function(){
-        updateDimensions();
+        updateDimensions("obj");
         $("#objFilename").val(globals.filename + " : " + parseInt(globals.creasePercent*100) +  "PercentFolded");
         $('#exportOBJModal').modal('show');
     });
     setInput(".exportScale", globals.exportScale, function(val){
         globals.exportScale = val;
-        updateDimensions();
+        updateDimensions(lastExportFormat);//the scale field is shared by all three dialogs
     }, 0);
-    function updateDimensions(){
-        var dim = globals.model.getDimensions();
+    var lastExportFormat = "stl";
+    function updateDimensions(format){
+        if (format !== undefined) lastExportFormat = format;
+        var dim = globals.model.getDimensions(lastExportFormat);
         dim.multiplyScalar(globals.exportScale/globals.scale);
         $(".exportDimensions").html(dim.x.toFixed(2) + " x " + dim.y.toFixed(2) + " x " + dim.z.toFixed(2));
     }
@@ -471,6 +473,31 @@ function initControls(globals){
     setSliderInput("#percentDamping", globals.percentDamping, 0.01, 0.5, 0.01, function(val){
         globals.percentDamping = val;
         globals.materialHasChanged = true;
+    });
+
+    setCheckbox("#simulateThickness", globals.simulateThickness, function(val){
+        globals.simulateThickness = val;
+        globals.creaseMaterialHasChanged = true;//refresh thickness-limited fold angles on the gpu
+        globals.model.updateThicknessView();
+    });
+    setInput("#materialThickness", globals.materialThickness, function(val){
+        globals.materialThickness = val;
+        globals.creaseMaterialHasChanged = true;
+        globals.model.updateThicknessView();
+    }, 0);
+    setCheckbox("#collisionsEnabled", globals.collisionsEnabled, function(val){
+        globals.collisionsEnabled = val;//read by the solver each step, nothing else to sync
+        if (!val) return;
+        if (globals.thickness && globals.thickness.offsetPanelsActive()){
+            globals.warn("Collision solving is not used for this model: its panels are offset across the " +
+                "folded stack, which already holds the plates apart.  The contact solver measures distances " +
+                "between the plate midsurfaces, which offset panels deliberately fold onto a single plane, " +
+                "so running it here would stop the model folding flat.");
+        } else if (!globals.collisionsAvailable){
+            globals.warn("Collision solving is disabled for this model: it is too large for the all-pairs " +
+                "contact solver, which would slow the simulation to a crawl.  Fold angles are still limited " +
+                "by material thickness.");
+        }
     });
 
     var creasePercentSlider = setSliderInput("#creasePercent", globals.creasePercent*100, -100, 100, 1, function(val){

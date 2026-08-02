@@ -55,6 +55,13 @@ function initGPUMath(){
         };
     };
 
+    GPUMath.prototype.deleteProgram = function(programName){
+        var program = this.programs[programName];
+        if (!program) return;
+        gl.deleteProgram(program.program);
+        delete this.programs[programName];
+    };
+
     GPUMath.prototype.initTextureFromData = function(name, width, height, typeName, data, shouldReplace){
         var texture = this.textures[name];
 

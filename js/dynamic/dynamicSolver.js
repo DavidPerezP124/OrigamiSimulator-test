@@ -29,7 +29,7 @@ function initDynamicSolver(globals){
     var faceVertexIndices;//[a,b,c] textureDimFaces
     var nominalTriangles;//[angleA, angleB, angleC]
     var nodeFaceMeta;//[faceIndex, a, b, c] textureNodeFaces
-    var creaseMeta;//[k, d, targetTheta, -] textureDimCreases
+    var creaseMeta;//[k, d, targetTheta, thetaMax] textureDimCreases
     var creaseMeta2;//[node1Index, node2Index, node3index, node4index]//nodes 1 and 2 are opposite crease, 3 and 4 are on crease, textureDimCreases
     var nodeCreaseMeta;//[creaseIndex (thetaIndex), nodeIndex (1/2/3/4), -, -] textureDimNodeCreases
     var creaseGeo;//[h1, h2, coef1, coef2]
@@ -52,6 +52,16 @@ function initDynamicSolver(globals){
     }
 
     var programsInited = false;//flag for initial setup
+    var contactProgramReady = false;//collision solver compiled for the current model
+    //the contact pass is all-pairs, so its cost is a product of the model's counts, not any
+    //single count: the direct node-vs-face loop is nodes*faces, and the reaction gather walks
+    //each node's own incident faces against every node, so it is nodes*sum(valence). budget
+    //the total per substep - a model can sit well under any individual limit and still be
+    //unusably slow (100 substeps run per rendered frame)
+    var MAX_CONTACT_TESTS = 2000000;//intersection tests per substep
+    var MAX_CONTACT_FACES = 8192;//hard ceiling on the baked shader loop bounds
+    var maxNodeFaces = 0;//highest face valence in the model, baked into the contact shader
+    var sumNodeFaces = 0;//summed face incidence over all nodes (3*faces for a triangle mesh)
 
     var textureDim = 0;
     var textureDimEdges = 0;
@@ -92,6 +102,12 @@ function initDynamicSolver(globals){
             updateLastPosition();
             globals.nodePositionHasChanged = false;
         }
+        //a negative fold percent reverses every crease, so the stack order - and with it every
+        //crease's thetaMax - has to be rebuilt. done here rather than only in the thick view:
+        //the angle limits apply whenever thickness is on, but the thick mesh is not drawn in
+        //the strain and normal color modes, so hooking it to that view would miss those. it
+        //runs before the check below so the refreshed limits upload in the same step
+        if (globals.thickness) globals.thickness.syncFoldDirection();
         if (globals.creaseMaterialHasChanged) {
             updateCreasesMeta();
             globals.creaseMaterialHasChanged = false;
@@ -145,10 +161,27 @@ function initDynamicSolver(globals){
         //already at textureDimCreasesxtextureDimCreases
         gpuMath.step("updateCreaseGeo", ["u_lastPosition", "u_originalPosition", "u_creaseMeta2"], "u_creaseGeo");
 
+        //collision solver: fold node vs plate contact forces into a copy of the external
+        //force field, then feed that to the integration step in place of u_externalForces.
+        //not used under the offset panel construction: the pass measures separation between
+        //midsurfaces, and offset panels deliberately fold their midsurfaces onto one plane
+        //while the plates themselves are held apart by their stack offsets. running it there
+        //fires contact everywhere, splays the stack and stops the model reaching a full fold
+        var offsetPanels = globals.thickness ? globals.thickness.offsetPanelsActive() : false;
+        var contactEnabled = contactProgramReady && globals.simulateThickness && globals.collisionsEnabled &&
+            globals.materialThickness > 0 && !offsetPanels;
+        if (contactEnabled){
+            gpuMath.setProgram("contactCalc");
+            gpuMath.setSize(textureDim, textureDim);
+            gpuMath.step("contactCalc", ["u_lastPosition", "u_originalPosition", "u_externalForces",
+                "u_faceVertexIndices", "u_normals", "u_meta2", "u_nodeFaceMeta", "u_lastVelocity"], "u_contactForces");
+        }
+        var forcesTexture = contactEnabled ? "u_contactForces" : "u_externalForces";
+
         if (globals.integrationType == "verlet"){
             gpuMath.setProgram("positionCalcVerlet");
             gpuMath.setSize(textureDim, textureDim);
-            gpuMath.step("positionCalcVerlet", ["u_lastPosition", "u_lastLastPosition", "u_lastVelocity", "u_originalPosition", "u_externalForces",
+            gpuMath.step("positionCalcVerlet", ["u_lastPosition", "u_lastLastPosition", "u_lastVelocity", "u_originalPosition", forcesTexture,
                 "u_mass", "u_meta", "u_beamMeta", "u_creaseMeta", "u_nodeCreaseMeta", "u_normals", "u_theta", "u_creaseGeo",
                 "u_meta2", "u_nodeFaceMeta", "u_nominalTriangles"], "u_position");
             gpuMath.step("velocityCalcVerlet", ["u_position", "u_lastPosition", "u_mass"], "u_velocity");
@@ -156,7 +189,7 @@ function initDynamicSolver(globals){
         } else {//euler
             gpuMath.setProgram("velocityCalc");
             gpuMath.setSize(textureDim, textureDim);
-            gpuMath.step("velocityCalc", ["u_lastPosition", "u_lastVelocity", "u_originalPosition", "u_externalForces",
+            gpuMath.step("velocityCalc", ["u_lastPosition", "u_lastVelocity", "u_originalPosition", forcesTexture,
                 "u_mass", "u_meta", "u_beamMeta", "u_creaseMeta", "u_nodeCreaseMeta", "u_normals", "u_theta", "u_creaseGeo",
                 "u_meta2", "u_nodeFaceMeta", "u_nominalTriangles"], "u_velocity");
             gpuMath.step("positionCalc", ["u_velocity", "u_lastPosition", "u_mass"], "u_position");
@@ -238,6 +271,10 @@ function initDynamicSolver(globals){
         globals.gpuMath.setUniformForProgram("positionCalc", "u_dt", dt, "1f");
         globals.gpuMath.setProgram("velocityCalcVerlet");
         globals.gpuMath.setUniformForProgram("velocityCalcVerlet", "u_dt", dt, "1f");
+        if (contactProgramReady){
+            globals.gpuMath.setProgram("contactCalc");
+            globals.gpuMath.setUniformForProgram("contactCalc", "u_dt", dt, "1f");
+        }
         globals.controls.setDeltaT(dt);
     }
 
@@ -385,6 +422,44 @@ function initDynamicSolver(globals){
         gpuMath.setUniformForProgram("copyTexture", "u_orig", 0, "1i");
         gpuMath.setUniformForProgram("copyTexture", "u_textureDim", [textureDim, textureDim], "2f");
 
+        //collision solver: recompiled per model with the face and node counts baked into
+        //the loop bounds (webgl 1 requires compile-time constant loop bounds)
+        gpuMath.deleteProgram("contactCalc");
+        contactProgramReady = false;
+        //the reaction gather breaks out at each node's own valence, so charge the summed
+        //incidence rather than assuming every node carries the model's highest valence -
+        //otherwise a triangulated fan (one hub vertex, common in radial crease patterns) is
+        //charged orders of magnitude more than it actually executes
+        var contactTests = nodes.length*faces.length + nodes.length*sumNodeFaces;
+        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES && nodes.length <= MAX_CONTACT_FACES &&
+            contactTests <= MAX_CONTACT_TESTS){
+            gpuMath.initTextureFromData("u_contactForces", textureDim, textureDim, "FLOAT", null, true);
+            gpuMath.initFrameBufferForTexture("u_contactForces", true);
+            var contactShader = document.getElementById("contactCalcShader").text
+                .replace("#define NUM_FACES 0", "#define NUM_FACES " + faces.length)
+                .replace("#define NUM_NODES 0", "#define NUM_NODES " + nodes.length)
+                .replace("#define MAX_NODE_FACES 0", "#define MAX_NODE_FACES " + maxNodeFaces);
+            gpuMath.createProgram("contactCalc", vertexShader, contactShader);
+            gpuMath.setUniformForProgram("contactCalc", "u_lastPosition", 0, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_originalPosition", 1, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_externalForces", 2, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_faceVertexIndices", 3, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_normals", 4, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_meta2", 5, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_nodeFaceMeta", 6, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_lastVelocity", 7, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDim", [textureDim, textureDim], "2f");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDimFaces", [textureDimFaces, textureDimFaces], "2f");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDimNodeFaces", [textureDimNodeFaces, textureDimNodeFaces], "2f");
+            contactProgramReady = true;
+            updateContactParams();
+        } else if (faces.length > 0){
+            console.warn("collision solver disabled: this model needs " + Math.round(contactTests/1000) +
+                "k contact tests per substep (" + nodes.length + " vertices, " + faces.length +
+                " faces), over the " + Math.round(MAX_CONTACT_TESTS/1000) + "k budget. fold angle limits still apply.");
+        }
+        globals.collisionsAvailable = contactProgramReady;
+
         gpuMath.createProgram("updateCreaseGeo", vertexShader, document.getElementById("updateCreaseGeo").text);
         gpuMath.setUniformForProgram("updateCreaseGeo", "u_lastPosition", 0, "1i");
         gpuMath.setUniformForProgram("updateCreaseGeo", "u_originalPosition", 1, "1i");
@@ -436,6 +511,7 @@ function initDynamicSolver(globals){
             globals.gpuMath.setProgram("positionCalcVerlet");
             globals.gpuMath.setUniformForProgram("positionCalcVerlet", "u_axialStiffness", globals.axialStiffness, "1f");
             globals.gpuMath.setUniformForProgram("positionCalcVerlet", "u_faceStiffness", globals.faceStiffness, "1f");
+            if (contactProgramReady) updateContactParams();//contact stiffness scales with axial stiffness
             setSolveParams();//recalc dt
         }
     }
@@ -484,8 +560,25 @@ function initDynamicSolver(globals){
             creaseMeta[i*4] = crease.getK();
             // creaseMeta[i*4+1] = crease.getD();
             if (initing) creaseMeta[i*4+2] = crease.getTargetTheta();
+            //thickness-limited max fold angle (a large value means unlimited, so the shader's
+            //clamp and overshoot force are inert when thickness simulation is off)
+            creaseMeta[i*4+3] = globals.thickness ? globals.thickness.getCreaseThetaMax(crease) : 10000;
         }
         globals.gpuMath.initTextureFromData("u_creaseMeta", textureDimCreases, textureDimCreases, "FLOAT", creaseMeta, true);
+        if (contactProgramReady) updateContactParams();
+    }
+
+    function updateContactParams(){
+        //two plates of thickness t each carry t/2 either side of their midsurface, so their
+        //surfaces meet when the midsurfaces are a full t apart - repelling any later would
+        //let them interpenetrate before contact even engages
+        var contactThickness = globals.materialThickness*globals.scale;
+        //keep contact softer than the axial constraints so it cannot destabilize the sim
+        //(dt is chosen from the axial stiffness)
+        var contactStiffness = 0.5*globals.axialStiffness;
+        globals.gpuMath.setProgram("contactCalc");
+        globals.gpuMath.setUniformForProgram("contactCalc", "u_contactThickness", contactThickness, "1f");
+        globals.gpuMath.setUniformForProgram("contactCalc", "u_contactStiffness", contactStiffness, "1f");
     }
 
     function updateLastPosition(){
@@ -514,6 +607,7 @@ function initDynamicSolver(globals){
 
         var numNodeFaces = 0;
         var nodeFaces = [];
+        maxNodeFaces = 0;
         for (var i=0;i<nodes.length;i++){
             nodeFaces.push([]);
             for (var j=0;j<faces.length;j++){
@@ -522,7 +616,9 @@ function initDynamicSolver(globals){
                     numNodeFaces++;
                 }
             }
+            if (nodeFaces[i].length > maxNodeFaces) maxNodeFaces = nodeFaces[i].length;
         }
+        sumNodeFaces = numNodeFaces;//for the collision workload budget
         textureDimNodeFaces = calcTextureSize(numNodeFaces);
 
         var numEdges = 0;

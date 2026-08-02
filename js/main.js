@@ -54,6 +54,7 @@ $(function() {
     globals.controls = initControls(globals);
     globals.UI3D = init3DUI(globals);
     globals.importer = initImporter(globals);
+    globals.thickness = initThickness(globals);
     globals.model = initModel(globals);
     // globals.staticSolver = initStaticSolver(globals);//still in development
     globals.dynamicSolver = initDynamicSolver(globals);

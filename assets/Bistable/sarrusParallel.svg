@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Sarrus-style parallel mechanism, continuous (non-bistable) variant.
+     After Yeow et al., "Origami-Inspired Snap-through Bistability in Parallel and Curved
+     Mechanisms Through the Inflection of Degree Four Vertexes", ICRA 2021, Fig. 1(b).
+
+     100px = 10mm, the paper's base unit square. Cross-shaped net: the centre square is the
+     moving platform, each arm is a wall two units (20mm) tall - matching the paper's 0-20mm
+     vertical travel - and each arm ends in a one-unit base flange. The mid-wall crease closes
+     to 180 as the column collapses, so the mechanism folds flat. The corners of the cross are
+     absent so the four walls do not interfere on the way down. -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     x="0px" y="0px" width="700px" height="700px" viewBox="0 0 700 700" xml:space="preserve">
+
+<!-- sheet outline: a plus, arms 100 wide running to each edge -->
+<path fill="none" stroke="#000000" stroke-miterlimit="10" d="M300,0H400V300H700V400H400V700H300V400H0V300H300V0z"/>
+
+<!-- platform edges: the four walls hinge down from the moving platform -->
+<path fill="none" stroke="#FF0000" stroke-miterlimit="10" d="M300,300H400 M300,400H400 M300,300V400 M400,300V400"/>
+
+<!-- mid-wall creases: these close to 180 as the column collapses flat -->
+<path fill="none" stroke="#0000FF" stroke-miterlimit="10" d="M300,200H400 M300,500H400 M200,300V400 M500,300V400"/>
+
+<!-- flange edges: the feet fold out to lie flat on the ground plane -->
+<path fill="none" stroke="#FF0000" stroke-miterlimit="10" d="M300,100H400 M300,600H400 M100,300V400 M600,300V400"/>
+</svg>

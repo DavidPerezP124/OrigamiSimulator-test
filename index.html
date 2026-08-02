@@ -195,7 +195,7 @@
         uniform sampler2D u_mass;
         uniform sampler2D u_meta;//[beamsIndex, numBeam, nodeCreaseMetaIndex, numCreases]
         uniform sampler2D u_beamMeta;//[k, d, length, otherNodeIndex]
-        uniform sampler2D u_creaseMeta;//[k, d, targetTheta]
+        uniform sampler2D u_creaseMeta;//[k, d, targetTheta, thetaMax]
         uniform sampler2D u_nodeCreaseMeta;//[creaseIndex, nodeIndex, -, -]
         uniform sampler2D u_normals;
         uniform sampler2D u_theta;//[theta, z, normal1Index, normal2Index]
@@ -271,12 +271,17 @@
                 vec2 scaledCreaseIndex = creaseIndex/u_textureDimCreases;
 
                 vec4 thetas = texture2D(u_theta, scaledCreaseIndex);
-                vec3 creaseMeta = texture2D(u_creaseMeta, scaledCreaseIndex).xyz;//[k, d, targetTheta]
+                vec4 creaseMeta = texture2D(u_creaseMeta, scaledCreaseIndex);//[k, d, targetTheta, thetaMax]
                 vec4 creaseGeo = texture2D(u_creaseGeo, scaledCreaseIndex);//[h1, h2, coef1, coef2]
                 if (creaseGeo[0]< 0.0) continue;//crease disabled bc it has collapsed too much
 
                 float targetTheta = creaseMeta[2] * u_creasePercent;
+                targetTheta = clamp(targetTheta, -creaseMeta[3], creaseMeta[3]);//thick material cannot fold completely flat
                 float angForce = creaseMeta[0]*(targetTheta-thetas[0]);// + creaseMeta[1]*thetas[1];
+                //one-sided stiffening when neighboring creases push this fold past its
+                //thickness limit - the plates are in contact at the hinge
+                float overshoot = abs(thetas[0])-creaseMeta[3];
+                if (overshoot > 0.0) angForce -= 2.0*creaseMeta[0]*overshoot*sign(thetas[0]);
 
                 float nodeNum = nodeCreaseMeta[1];//1, 2, 3, 4
 
@@ -406,7 +411,7 @@
         uniform sampler2D u_mass;
         uniform sampler2D u_meta;//[beamsIndex, numBeam, nodeCreaseMetaIndex, numCreases]
         uniform sampler2D u_beamMeta;//[k, d, length, otherNodeIndex]
-        uniform sampler2D u_creaseMeta;//[k, d, targetTheta]
+        uniform sampler2D u_creaseMeta;//[k, d, targetTheta, thetaMax]
         uniform sampler2D u_nodeCreaseMeta;//[creaseIndex, nodeIndex, -, -]
         uniform sampler2D u_normals;
         uniform sampler2D u_theta;//[theta, z, normal1Index, normal2Index]
@@ -483,12 +488,17 @@
                 vec2 scaledCreaseIndex = creaseIndex/u_textureDimCreases;
 
                 vec4 thetas = texture2D(u_theta, scaledCreaseIndex);
-                vec3 creaseMeta = texture2D(u_creaseMeta, scaledCreaseIndex).xyz;//[k, d, targetTheta]
+                vec4 creaseMeta = texture2D(u_creaseMeta, scaledCreaseIndex);//[k, d, targetTheta, thetaMax]
                 vec4 creaseGeo = texture2D(u_creaseGeo, scaledCreaseIndex);//[h1, h2, coef1, coef2]
                 if (creaseGeo[0]< 0.0) continue;//crease disabled bc it has collapsed too much
 
                 float targetTheta = creaseMeta[2] * u_creasePercent;
+                targetTheta = clamp(targetTheta, -creaseMeta[3], creaseMeta[3]);//thick material cannot fold completely flat
                 float angForce = creaseMeta[0]*(targetTheta-thetas[0]);// + creaseMeta[1]*thetas[1];
+                //one-sided stiffening when neighboring creases push this fold past its
+                //thickness limit - the plates are in contact at the hinge
+                float overshoot = abs(thetas[0])-creaseMeta[3];
+                if (overshoot > 0.0) angForce -= 2.0*creaseMeta[0]*overshoot*sign(thetas[0]);
 
                 float nodeNum = nodeCreaseMeta[1];//1, 2, 3, 4
 
@@ -591,6 +601,193 @@
 
             vec3 nextPosition = force*u_dt*u_dt/mass[0] + 2.0*lastPosition - lastLastPosition;
             gl_FragColor = vec4(nextPosition,nodeError);//position.a has error info
+        }
+    </script>
+
+    <script id="contactCalcShader" type="x-shader/x-fragment">
+        //node vs plate collision solver: each node is tested against every face of the mesh
+        //(NUM_FACES/NUM_NODES are baked in at compile time) and repelled along the face
+        //normal when the plates would overlap; an equal and opposite reaction is gathered by
+        //the contacted face's own vertices (weighted by barycentric coords) so contact
+        //conserves momentum; the result is the external force field plus contact forces
+        #define NUM_FACES 0
+        #define NUM_NODES 0
+        #define MAX_NODE_FACES 0
+        precision mediump float;
+        uniform vec2 u_textureDim;
+        uniform vec2 u_textureDimFaces;
+        uniform vec2 u_textureDimNodeFaces;
+        uniform float u_contactThickness;//min plate separation, in simulation units
+        uniform float u_contactStiffness;
+        uniform float u_dt;
+        uniform sampler2D u_lastPosition;
+        uniform sampler2D u_originalPosition;
+        uniform sampler2D u_externalForces;
+        uniform sampler2D u_faceVertexIndices;
+        uniform sampler2D u_normals;
+        uniform sampler2D u_meta2;//[nodeFaceMetaIndex, numFaces]
+        uniform sampler2D u_nodeFaceMeta;//[faceIndex, a, b, c]
+        uniform sampler2D u_lastVelocity;
+
+        vec4 getFromArray(float index1D, vec2 dimensions, sampler2D tex){
+            vec2 index = vec2(mod(index1D, dimensions.x)+0.5, floor(index1D/dimensions.x)+0.5);
+            vec2 scaledIndex = index/dimensions;
+            return texture2D(tex, scaledIndex);
+        }
+
+        vec3 getPosition(float index1D){
+            vec2 index = vec2(mod(index1D, u_textureDim.x)+0.5, floor(index1D/u_textureDim.x)+0.5);
+            vec2 scaledIndex = index/u_textureDim;
+            return texture2D(u_lastPosition, scaledIndex).xyz + texture2D(u_originalPosition, scaledIndex).xyz;
+        }
+
+        vec3 getVelocity(float index1D){
+            vec2 index = vec2(mod(index1D, u_textureDim.x)+0.5, floor(index1D/u_textureDim.x)+0.5);
+            vec2 scaledIndex = index/u_textureDim;
+            return texture2D(u_lastVelocity, scaledIndex).xyz;
+        }
+
+        //penalty force pushing a node with position p and velocity vel away from the plate
+        //of face (a, b, c) with unit normal and corner velocities (va, vb, vc), or
+        //vec3(0.0) if they are not in contact; bary receives the barycentric coords of
+        //the node's projection onto the face
+        vec3 contactForce(vec3 p, vec3 vel, vec3 a, vec3 b, vec3 c, vec3 va, vec3 vb, vec3 vc, vec3 normal, out vec3 bary){
+            bary = vec3(0.0);
+            float dist = dot(p-a, normal);
+
+            //where the node sat relative to this plate one step ago, from the plate's actual
+            //previous position rather than a mean velocity: a triangle rotating or deforming
+            //about a still centroid averages to zero velocity while the material near the node
+            //still sweeps through it, and a mean-based guard would call that no motion at all
+            vec3 prevA = a-va*u_dt;
+            vec3 prevP = p-vel*u_dt;
+            vec3 prevNormal = cross((b-vb*u_dt)-prevA, (c-vc*u_dt)-prevA);
+            float prevLen = length(prevNormal);
+            prevNormal = prevLen > 0.000001 ? prevNormal/prevLen : normal;//degenerate previous triangle
+            if (dot(prevNormal, normal) < 0.0) prevNormal = -prevNormal;//keep the sign comparable
+            float prevDist = dot(prevP-prevA, prevNormal);
+
+            //a step can carry the pair clean through the whole contact band - out one side to
+            //out the other - and testing only the endpoint would let that tunnel silently.
+            //keep any step whose endpoints straddle the plate, however far out it landed
+            bool crossed = (prevDist >= 0.0) != (dist >= 0.0);
+            if (abs(dist) >= u_contactThickness && !crossed) return vec3(0.0);
+
+            //where to test containment. for a step that crossed the plate, use the point
+            //where it crossed rather than where it ended: a node can enter over the triangle
+            //and leave past one of its edges within a single step, and testing the endpoint
+            //alone would call that a miss. the crossing point is taken on the plate's current
+            //plane against its current triangle - first order, not exact coplanarity-time CCD
+            vec3 contactPoint = p-dist*normal;
+            if (crossed){
+                float span = prevDist-dist;
+                if (abs(span) > 0.000001){
+                    vec3 crossPoint = prevP + (prevDist/span)*(p-prevP);
+                    contactPoint = crossPoint - dot(crossPoint-a, normal)*normal;
+                }
+            }
+
+            //barycentric coords of the contact point on the face plane
+            vec3 v0 = b-a;
+            vec3 v1 = c-a;
+            vec3 v2 = contactPoint-a;
+            float d00 = dot(v0, v0);
+            float d01 = dot(v0, v1);
+            float d11 = dot(v1, v1);
+            float d20 = dot(v2, v0);
+            float d21 = dot(v2, v1);
+            float denom = d00*d11-d01*d01;
+            if (abs(denom) < 0.0000000001) return vec3(0.0);//degenerate face
+            float v = (d11*d20-d01*d21)/denom;
+            float w = (d00*d21-d01*d20)/denom;
+            //only repel projections strictly inside the face. in a valid non overlapping
+            //triangulation no vertex projects into the interior of a face it is not part of,
+            //so the flat sheet generates no contacts on its own; the margin only has to
+            //absorb rounding noise for a projection sitting exactly on an edge. keep it
+            //small - a wide margin leaves a collision free band along every triangulation
+            //seam, and a vertex landing on an interior edge has a near zero coordinate in
+            //both incident faces and would be rejected by both
+            float margin = 0.002;
+            if (v < margin || w < margin || 1.0-v-w < margin) return vec3(0.0);
+            bary = vec3(1.0-v-w, v, w);
+
+            //push toward the side the node approached from, so a step that carried it across
+            //the plate is undone rather than completed. prevDist above already measures that
+            //against the plate's real previous position, which covers the plate's own motion
+            //including rotation - no separate velocity reconstruction is needed here
+            float direction = prevDist >= 0.0 ? 1.0 : -1.0;
+            if (abs(prevDist) < 0.000001) direction = dist >= 0.0 ? 1.0 : -1.0;
+
+            //how far the pair has to travel to be clear again. for a crossing that is back
+            //across the plate AND out to the band edge, so the restoring force grows with the
+            //overshoot instead of saturating at one band width
+            //this only makes the response continuous and monotone in the overshoot; measured
+            //against the constant it replaces it does NOT reduce tunnelling (see README) -
+            //a crossing that survives its one substep of response is still lost
+            float penetration = crossed ? abs(dist)+u_contactThickness : u_contactThickness-abs(dist);
+            return normal*(direction*u_contactStiffness*penetration);
+        }
+
+        void main(){
+            vec2 fragCoord = gl_FragCoord.xy;
+            vec2 scaledFragCoord = fragCoord/u_textureDim;
+
+            vec3 force = texture2D(u_externalForces, scaledFragCoord).xyz;
+            float myIndex = floor(fragCoord.x) + floor(fragCoord.y)*u_textureDim.x;
+            vec3 position = texture2D(u_lastPosition, scaledFragCoord).xyz + texture2D(u_originalPosition, scaledFragCoord).xyz;
+            vec3 velocity = texture2D(u_lastVelocity, scaledFragCoord).xyz;
+            vec3 bary;
+
+            //this node against every other plate
+            for (int j=0;j<NUM_FACES;j++){
+                vec3 faceVerts = getFromArray(float(j), u_textureDimFaces, u_faceVertexIndices).xyz;
+                //skip faces this node belongs to
+                if (abs(faceVerts[0]-myIndex) < 0.1 || abs(faceVerts[1]-myIndex) < 0.1 || abs(faceVerts[2]-myIndex) < 0.1) continue;
+
+                //no cheap distance reject here: whether the pair swept across the plate
+                //depends on the plate's motion as much as the node's, and a reject built from
+                //the node velocity alone lets a moving plate cross a still node unnoticed.
+                //deciding it needs the face velocities anyway, so contactForce does it
+                vec3 a = getPosition(faceVerts[0]);
+                vec3 b = getPosition(faceVerts[1]);
+                vec3 c = getPosition(faceVerts[2]);
+                vec3 normal = getFromArray(float(j), u_textureDimFaces, u_normals).xyz;
+
+                force += contactForce(position, velocity, a, b, c,
+                    getVelocity(faceVerts[0]), getVelocity(faceVerts[1]), getVelocity(faceVerts[2]), normal, bary);
+            }
+
+            //reactions: every node penetrating a face this node belongs to pushes back on
+            //this node, weighted by this corner's barycentric coordinate
+            vec2 meta2 = texture2D(u_meta2, scaledFragCoord).xy;
+            for (int j=0;j<MAX_NODE_FACES;j++){//for all faces of this node (bound baked in at compile time)
+                if (j >= int(meta2[1])) break;
+                vec4 faceMeta = getFromArray(meta2[0]+float(j), u_textureDimNodeFaces, u_nodeFaceMeta);//[faceIndex, a, b, c]
+                vec3 faceVerts = getFromArray(faceMeta[0], u_textureDimFaces, u_faceVertexIndices).xyz;
+
+                int myCorner = 0;
+                if (abs(faceVerts[1]-myIndex) < 0.1) myCorner = 1;
+                else if (abs(faceVerts[2]-myIndex) < 0.1) myCorner = 2;
+
+                vec3 a = getPosition(faceVerts[0]);
+                vec3 b = getPosition(faceVerts[1]);
+                vec3 c = getPosition(faceVerts[2]);
+                vec3 va = getVelocity(faceVerts[0]);
+                vec3 vb = getVelocity(faceVerts[1]);
+                vec3 vc = getVelocity(faceVerts[2]);
+                vec3 normal = getFromArray(faceMeta[0], u_textureDimFaces, u_normals).xyz;
+
+                for (int n=0;n<NUM_NODES;n++){
+                    float nodeIndex = float(n);
+                    if (abs(faceVerts[0]-nodeIndex) < 0.1 || abs(faceVerts[1]-nodeIndex) < 0.1 || abs(faceVerts[2]-nodeIndex) < 0.1) continue;
+
+                    vec3 nodeForce = contactForce(getPosition(nodeIndex), getVelocity(nodeIndex), a, b, c, va, vb, vc, normal, bary);
+                    float weight = myCorner == 0 ? bary[0] : (myCorner == 1 ? bary[1] : bary[2]);
+                    force -= weight*nodeForce;
+                }
+            }
+
+            gl_FragColor = vec4(force, 0.0);
         }
     </script>
 
@@ -781,6 +978,7 @@
     <script type="text/javascript" src="js/node.js"></script>
     <script type="text/javascript" src="js/beam.js"></script>
     <script type="text/javascript" src="js/crease.js"></script>
+    <script type="text/javascript" src="js/thickness.js"></script>
     <script type="text/javascript" src="js/model.js"></script>
     <script type="text/javascript" src="js/3dUI.js"></script>
     <script type="text/javascript" src="js/staticSolver.js"></script>
@@ -1048,6 +1246,8 @@
                         <a tabindex="-1">Bistable<span class="pull-right fui-arrow-right"></span></a>
                         <ul class="dropdown-menu">
                             <li><a href="#" class="demo author" data-author="bistable" data-url="Bistable/curvedPleatSimple.svg">Curved Pleat</a></li>
+                            <li><a href="#" class="demo author" data-author="bistable" data-url="Bistable/sarrusParallel.svg">Sarrus Parallel</a></li>
+                            <li><a href="#" class="demo author" data-author="bistable" data-url="Bistable/curvedBistable.svg">Curved Bistable</a></li>
                         </ul>
                     </li>
                     <li class="divider"></li>
@@ -1193,6 +1393,22 @@
             <div class="sliderInput" id="percentDamping">
                 <span class="label-slider">Damping Ratio : </span><div class="flat-slider ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content"></div>
                 <input value="" placeholder="" class="float form-control" type="text">
+            </div>
+            <div class="indent paddingBottom">
+                <label class="bigLabel checkbox" for="simulateThickness">
+                    <input id="simulateThickness" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Simulate material thickness<br/>
+                </label>
+                <div class="indent">
+                Thickness (pattern units): &nbsp;&nbsp;<input id="materialThickness" value="" placeholder="" class="float form-control" type="text"><br/>
+                <label class="checkbox" for="collisionsEnabled">
+                    <input id="collisionsEnabled" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Resolve collisions between plates<br/>
+                </label>
+                <span class="smallTxt">Fold angles are limited so that plates of thick, rigid material cannot pass through
+                each other - flat foldable patterns fold into a stack of plates instead of a plane.  The collision
+                solver additionally repels each vertex from any plate it would overlap.</span>
+                </div>
             </div>
         </div><br/>
     </div>
