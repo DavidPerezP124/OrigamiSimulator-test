@@ -137,6 +137,12 @@ function initControls(globals){
     setCheckbox("#doublesidedOBJ", globals.doublesidedOBJ, function(val){
         globals.doublesidedOBJ = val;
     });
+    setCheckbox("#thickenModel", globals.thickenModel, function(val){
+        globals.thickenModel = val;
+    });
+    setInput("#thickenOffset", globals.thickenOffset, function(val){
+        globals.thickenOffset = val;
+    }, 0);
     setCheckbox("#polyFacesOBJ", globals.polyFacesOBJ, function(val){
         globals.polyFacesOBJ = val;
     });
