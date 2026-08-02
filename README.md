@@ -77,8 +77,11 @@ Every simulation substep, an additional GPU pass tests each vertex against every
 force along the plate normal wherever the material would overlap, with the equal and opposite reaction distributed over the
 contacted triangle's vertices by barycentric weight; hinges pushed past their thickness limit stiffen one-sidedly
 (hinge-line contact).  This is standard penalty-force contact as used in cloth simulation (all-pairs
-vertex&ndash;triangle tests, O(nodes&nbsp;&times;&nbsp;faces) per substep).  For very large models (&gt;8192 triangles or
-vertices) the contact pass is skipped for performance.
+vertex&ndash;triangle tests).  Because it is all-pairs its cost is a product of the model's size - the direct pass is
+O(vertices&nbsp;&times;&nbsp;faces) and the reaction gather O(vertices&sup2;&nbsp;&times;&nbsp;valence) per substep, with 100
+substeps per rendered frame - so it is enabled only for models whose total stays inside a fixed budget (roughly a few
+hundred vertices).  Larger models keep their thickness fold angle limits and report in the console that contact was
+skipped; a spatial acceleration structure would be needed to lift that ceiling.
 </p>
 <p>
 Known limitations of the contact pass:

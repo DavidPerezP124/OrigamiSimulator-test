@@ -53,7 +53,12 @@ function initDynamicSolver(globals){
 
     var programsInited = false;//flag for initial setup
     var contactProgramReady = false;//collision solver compiled for the current model
-    var MAX_CONTACT_FACES = 8192;//cap on the baked shader loop bound
+    //the contact pass is all-pairs, so its cost is a product of the model's counts, not any
+    //single count: the direct node-vs-face loop is nodes*faces and the reaction gather is
+    //nodes*nodes*maxNodeFaces. budget the total per substep - a model can sit well under any
+    //individual limit and still be unusably slow (100 substeps run per rendered frame)
+    var MAX_CONTACT_TESTS = 2000000;//intersection tests per substep
+    var MAX_CONTACT_FACES = 8192;//hard ceiling on the baked shader loop bounds
     var maxNodeFaces = 0;//highest face valence in the model, baked into the contact shader
 
     var textureDim = 0;
@@ -408,7 +413,9 @@ function initDynamicSolver(globals){
         //the loop bounds (webgl 1 requires compile-time constant loop bounds)
         gpuMath.deleteProgram("contactCalc");
         contactProgramReady = false;
-        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES && nodes.length <= MAX_CONTACT_FACES){
+        var contactTests = nodes.length*faces.length + nodes.length*nodes.length*maxNodeFaces;
+        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES && nodes.length <= MAX_CONTACT_FACES &&
+            contactTests <= MAX_CONTACT_TESTS){
             gpuMath.initTextureFromData("u_contactForces", textureDim, textureDim, "FLOAT", null, true);
             gpuMath.initFrameBufferForTexture("u_contactForces", true);
             var contactShader = document.getElementById("contactCalcShader").text
@@ -429,9 +436,12 @@ function initDynamicSolver(globals){
             gpuMath.setUniformForProgram("contactCalc", "u_textureDimNodeFaces", [textureDimNodeFaces, textureDimNodeFaces], "2f");
             contactProgramReady = true;
             updateContactParams();
-        } else if (faces.length > MAX_CONTACT_FACES || nodes.length > MAX_CONTACT_FACES){
-            console.warn("model too large for the collision solver (max " + MAX_CONTACT_FACES + " faces/nodes), contact disabled");
+        } else if (faces.length > 0){
+            console.warn("collision solver disabled: this model needs " + Math.round(contactTests/1000) +
+                "k contact tests per substep (" + nodes.length + " vertices, " + faces.length +
+                " faces), over the " + Math.round(MAX_CONTACT_TESTS/1000) + "k budget. fold angle limits still apply.");
         }
+        globals.collisionsAvailable = contactProgramReady;
 
         gpuMath.createProgram("updateCreaseGeo", vertexShader, document.getElementById("updateCreaseGeo").text);
         gpuMath.setUniformForProgram("updateCreaseGeo", "u_lastPosition", 0, "1i");
