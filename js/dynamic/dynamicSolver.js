@@ -155,7 +155,7 @@ function initDynamicSolver(globals){
             gpuMath.setProgram("contactCalc");
             gpuMath.setSize(textureDim, textureDim);
             gpuMath.step("contactCalc", ["u_lastPosition", "u_originalPosition", "u_externalForces",
-                "u_faceVertexIndices", "u_normals"], "u_contactForces");
+                "u_faceVertexIndices", "u_normals", "u_meta2", "u_nodeFaceMeta", "u_lastVelocity"], "u_contactForces");
         }
         var forcesTexture = contactEnabled ? "u_contactForces" : "u_externalForces";
 
@@ -252,6 +252,10 @@ function initDynamicSolver(globals){
         globals.gpuMath.setUniformForProgram("positionCalc", "u_dt", dt, "1f");
         globals.gpuMath.setProgram("velocityCalcVerlet");
         globals.gpuMath.setUniformForProgram("velocityCalcVerlet", "u_dt", dt, "1f");
+        if (contactProgramReady){
+            globals.gpuMath.setProgram("contactCalc");
+            globals.gpuMath.setUniformForProgram("contactCalc", "u_dt", dt, "1f");
+        }
         globals.controls.setDeltaT(dt);
     }
 
@@ -399,26 +403,32 @@ function initDynamicSolver(globals){
         gpuMath.setUniformForProgram("copyTexture", "u_orig", 0, "1i");
         gpuMath.setUniformForProgram("copyTexture", "u_textureDim", [textureDim, textureDim], "2f");
 
-        //collision solver: recompiled per model with the face count baked into the loop bound
+        //collision solver: recompiled per model with the face and node counts baked into
+        //the loop bounds (webgl 1 requires compile-time constant loop bounds)
         gpuMath.deleteProgram("contactCalc");
         contactProgramReady = false;
-        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES){
+        if (faces.length > 0 && faces.length <= MAX_CONTACT_FACES && nodes.length <= MAX_CONTACT_FACES){
             gpuMath.initTextureFromData("u_contactForces", textureDim, textureDim, "FLOAT", null, true);
             gpuMath.initFrameBufferForTexture("u_contactForces", true);
             var contactShader = document.getElementById("contactCalcShader").text
-                .replace("#define NUM_FACES 0", "#define NUM_FACES " + faces.length);
+                .replace("#define NUM_FACES 0", "#define NUM_FACES " + faces.length)
+                .replace("#define NUM_NODES 0", "#define NUM_NODES " + nodes.length);
             gpuMath.createProgram("contactCalc", vertexShader, contactShader);
             gpuMath.setUniformForProgram("contactCalc", "u_lastPosition", 0, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_originalPosition", 1, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_externalForces", 2, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_faceVertexIndices", 3, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_normals", 4, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_meta2", 5, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_nodeFaceMeta", 6, "1i");
+            gpuMath.setUniformForProgram("contactCalc", "u_lastVelocity", 7, "1i");
             gpuMath.setUniformForProgram("contactCalc", "u_textureDim", [textureDim, textureDim], "2f");
             gpuMath.setUniformForProgram("contactCalc", "u_textureDimFaces", [textureDimFaces, textureDimFaces], "2f");
+            gpuMath.setUniformForProgram("contactCalc", "u_textureDimNodeFaces", [textureDimNodeFaces, textureDimNodeFaces], "2f");
             contactProgramReady = true;
             updateContactParams();
-        } else if (faces.length > MAX_CONTACT_FACES){
-            console.warn("model has " + faces.length + " faces, collision solver disabled (max " + MAX_CONTACT_FACES + ")");
+        } else if (faces.length > MAX_CONTACT_FACES || nodes.length > MAX_CONTACT_FACES){
+            console.warn("model too large for the collision solver (max " + MAX_CONTACT_FACES + " faces/nodes), contact disabled");
         }
 
         gpuMath.createProgram("updateCreaseGeo", vertexShader, document.getElementById("updateCreaseGeo").text);

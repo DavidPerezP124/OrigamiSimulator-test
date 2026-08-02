@@ -28,9 +28,13 @@ function initModel(globals){
         B: borderLines
     };
 
-    //extruded view of the folded surface for thickness simulation
+    //extruded view of the folded surface for thickness simulation - every triangle is
+    //rendered as an independent rigid slab (per-face extrusion along the face normal), so
+    //plates keep square edges and their full thickness at any fold angle, with no miter
+    //thinning at sharp creases; tops are color1, undersides color2 via vertex colors
     var thicknessMaterial = new THREE.MeshPhongMaterial({
         flatShading: true,
+        vertexColors: THREE.VertexColors,
         side: THREE.DoubleSide,
         polygonOffset: true,
         polygonOffsetFactor: 0.5,
@@ -39,11 +43,15 @@ function initModel(globals){
     var thicknessMesh = new THREE.Mesh(new THREE.BufferGeometry(), thicknessMaterial);
     thicknessMesh.visible = false;
     thicknessMesh.frustumCulled = false;//geometry updates every frame, skip bounding sphere upkeep
-    var thickPositions = null;//top vertices followed by bottom vertices
-    var thickFaceNormals = null;//scratch arrays for the per-frame offset calc
-    var thickVertexNormals = null;
-    var thickMiterDots = null;
-    var thickMiterCounts = null;
+    var thickPositions = null;//per face: 3 top vertices then 3 bottom vertices
+    var thickColors = null;
+    //invisible but raycastable stand-in material for the flat mesh while the thick view is
+    //shown, so node picking/dragging (3dUI, VRInterface) keeps working on the midsurface
+    var raycastProxyMaterial = new THREE.MeshBasicMaterial({
+        colorWrite: false,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
 
     clearGeometries();
     setMeshMaterial();
@@ -141,7 +149,7 @@ function initModel(globals){
         }
         frontside.material = material;
         backside.material = material2;
-        thicknessMaterial.color.setStyle("#" + globals.color1);
+        updateThicknessColors();
         updateMeshVisibility();
     }
 
@@ -158,9 +166,18 @@ function initModel(globals){
         //the thick view replaces the zero-thickness surface, except in strain/normal
         //color modes which rely on the flat mesh's vertex colors
         var showThickness = globals.simulateThickness && globals.colorMode == "color" && globals.meshVisible;
-        frontside.visible = globals.meshVisible && !showThickness;
-        backside.visible = globals.colorMode == "color" && globals.meshVisible && !showThickness;
         thicknessMesh.visible = showThickness;
+        if (showThickness){
+            //keep the flat mesh visible but non-rendering: the raycaster skips invisible
+            //objects, and node picking/dragging raycasts against getMesh()
+            frontside.material = raycastProxyMaterial;
+            frontside.visible = true;
+            backside.visible = false;
+        } else {
+            frontside.material = material;
+            frontside.visible = globals.meshVisible;
+            backside.visible = globals.colorMode == "color" && globals.meshVisible;
+        }
     }
 
     function getGeometry(){
@@ -204,95 +221,73 @@ function initModel(globals){
         if (thicknessMesh.visible) updateThicknessGeometry();
     }
 
-    //builds the extruded mesh topology: top and bottom copies of every face plus side
-    //walls along boundary edges; vertex positions are filled in by updateThicknessGeometry
+    //builds the slab mesh topology: for each face, 3 top vertices, 3 bottom vertices,
+    //a top and bottom triangle and 3 side walls; positions are filled in every frame by
+    //updateThicknessGeometry, colors are static per topology
     function buildThicknessGeometry(){
-        var numVertices = vertices.length;
         var numFaces = faces.length;
+        var numSlabVertices = numFaces*6;
 
-        //boundary edges belong to exactly one face
-        var edgeCounts = {};
-        for (var i=0;i<numFaces;i++){
-            var face = faces[i];
-            for (var j=0;j<3;j++){
-                var a = face[j];
-                var b = face[(j+1)%3];
-                var key = Math.min(a, b) + "_" + Math.max(a, b);
-                if (edgeCounts[key] === undefined) edgeCounts[key] = {a: a, b: b, count: 1};
-                else edgeCounts[key].count++;
-            }
-        }
-        var boundaryEdges = [];
-        _.each(edgeCounts, function(edge){
-            if (edge.count == 1) boundaryEdges.push(edge);
-        });
-
-        thickPositions = new Float32Array(numVertices*2*3);
-        thickFaceNormals = new Float32Array(numFaces*3);
-        thickVertexNormals = new Float32Array(numVertices*3);
-        thickMiterDots = new Float32Array(numVertices);
-        thickMiterCounts = new Float32Array(numVertices);
-        var IndexArrayType = numVertices*2 > 65535 ? Uint32Array : Uint16Array;
-        var thickIndices = new IndexArrayType((numFaces*2 + boundaryEdges.length*2)*3);
+        thickPositions = new Float32Array(numSlabVertices*3);
+        thickColors = new Float32Array(numSlabVertices*3);
+        var IndexArrayType = numSlabVertices > 65535 ? Uint32Array : Uint16Array;
+        var thickIndices = new IndexArrayType(numFaces*8*3);//top + bottom + 3 walls of 2 triangles each
         var index = 0;
-        for (var i=0;i<numFaces;i++){//top
-            thickIndices[index++] = faces[i][0];
-            thickIndices[index++] = faces[i][1];
-            thickIndices[index++] = faces[i][2];
-        }
-        for (var i=0;i<numFaces;i++){//bottom, reversed winding
-            thickIndices[index++] = faces[i][0] + numVertices;
-            thickIndices[index++] = faces[i][2] + numVertices;
-            thickIndices[index++] = faces[i][1] + numVertices;
-        }
-        for (var i=0;i<boundaryEdges.length;i++){//side walls
-            var a = boundaryEdges[i].a;
-            var b = boundaryEdges[i].b;
-            thickIndices[index++] = a;
-            thickIndices[index++] = a + numVertices;
-            thickIndices[index++] = b + numVertices;
-            thickIndices[index++] = a;
-            thickIndices[index++] = b + numVertices;
-            thickIndices[index++] = b;
+        for (var i=0;i<numFaces;i++){
+            var top = 6*i;
+            var bottom = 6*i+3;
+            thickIndices[index++] = top;
+            thickIndices[index++] = top+1;
+            thickIndices[index++] = top+2;
+            thickIndices[index++] = bottom;//reversed winding so the underside faces out
+            thickIndices[index++] = bottom+2;
+            thickIndices[index++] = bottom+1;
+            for (var j=0;j<3;j++){//outward-facing side walls
+                var k = (j+1)%3;
+                thickIndices[index++] = top+j;
+                thickIndices[index++] = bottom+j;
+                thickIndices[index++] = bottom+k;
+                thickIndices[index++] = top+j;
+                thickIndices[index++] = bottom+k;
+                thickIndices[index++] = top+k;
+            }
         }
 
         var thickGeometry = new THREE.BufferGeometry();
         thickGeometry.dynamic = true;
         thickGeometry.addAttribute('position', new THREE.BufferAttribute(thickPositions, 3));
+        thickGeometry.addAttribute('color', new THREE.BufferAttribute(thickColors, 3));
         thickGeometry.setIndex(new THREE.BufferAttribute(thickIndices, 1));
         var oldGeometry = thicknessMesh.geometry;
         thicknessMesh.geometry = thickGeometry;
         if (oldGeometry) oldGeometry.dispose();
+        updateThicknessColors();
     }
 
-    //offsets the current folded surface by +/- thickness/2 along angle-weighted vertex
-    //normals (same construction as the STL thickening export, but updated every frame)
+    function updateThicknessColors(){
+        if (!thickColors) return;
+        var color1 = new THREE.Color("#" + globals.color1);
+        var color2 = new THREE.Color("#" + globals.color2);
+        for (var i=0;i<thickColors.length/3;i+=6){
+            for (var j=0;j<3;j++){//plate tops get the front color, undersides the back color
+                thickColors[3*(i+j)] = color1.r;
+                thickColors[3*(i+j)+1] = color1.g;
+                thickColors[3*(i+j)+2] = color1.b;
+                thickColors[3*(i+j+3)] = color2.r;
+                thickColors[3*(i+j+3)+1] = color2.g;
+                thickColors[3*(i+j+3)+2] = color2.b;
+            }
+        }
+        if (thicknessMesh.geometry.attributes.color) thicknessMesh.geometry.attributes.color.needsUpdate = true;
+    }
+
+    //extrudes each face of the current folded surface into a rigid slab: the face's three
+    //vertices are offset +/- thickness/2 along the face normal, giving plates with square
+    //edges that keep their full thickness at any fold angle (no miter thinning)
     function updateThicknessGeometry(){
         if (!thickPositions || !positions) return;
-        var numVertices = vertices.length;
         var numFaces = faces.length;
-        var thickness = globals.materialThickness*globals.scale;//pattern units -> render units
-
-        var faceNormals = thickFaceNormals;
-        var vertexNormals = thickVertexNormals;
-        var miterDots = thickMiterDots;
-        var miterCounts = thickMiterCounts;
-        faceNormals.fill(0);
-        vertexNormals.fill(0);
-        miterDots.fill(0);
-        miterCounts.fill(0);
-
-        function cornerAngle(o, p1, p2){
-            var v1x = positions[3*p1]-positions[3*o], v1y = positions[3*p1+1]-positions[3*o+1], v1z = positions[3*p1+2]-positions[3*o+2];
-            var v2x = positions[3*p2]-positions[3*o], v2y = positions[3*p2+1]-positions[3*o+1], v2z = positions[3*p2+2]-positions[3*o+2];
-            var l1 = Math.sqrt(v1x*v1x+v1y*v1y+v1z*v1z);
-            var l2 = Math.sqrt(v2x*v2x+v2y*v2y+v2z*v2z);
-            if (l1 == 0 || l2 == 0) return 0;
-            var cosAngle = (v1x*v2x+v1y*v2y+v1z*v2z)/(l1*l2);
-            if (cosAngle > 1) cosAngle = 1;
-            else if (cosAngle < -1) cosAngle = -1;
-            return Math.acos(cosAngle);
-        }
+        var halfThickness = 0.5*globals.materialThickness*globals.scale;//pattern units -> render units
 
         for (var i=0;i<numFaces;i++){
             var a = faces[i][0], b = faces[i][1], c = faces[i][2];
@@ -300,50 +295,22 @@ function initModel(globals){
             var acx = positions[3*c]-positions[3*a], acy = positions[3*c+1]-positions[3*a+1], acz = positions[3*c+2]-positions[3*a+2];
             var nx = aby*acz-abz*acy, ny = abz*acx-abx*acz, nz = abx*acy-aby*acx;
             var length = Math.sqrt(nx*nx+ny*ny+nz*nz);
-            if (length > 0){
-                nx /= length;
-                ny /= length;
-                nz /= length;
-            }
-            faceNormals[3*i] = nx;
-            faceNormals[3*i+1] = ny;
-            faceNormals[3*i+2] = nz;
+            var scale = length > 0 ? halfThickness/length : 0;
+            nx *= scale;
+            ny *= scale;
+            nz *= scale;
             var corners = [a, b, c];
-            var angles = [cornerAngle(a, b, c), cornerAngle(b, c, a), cornerAngle(c, a, b)];
             for (var j=0;j<3;j++){
-                vertexNormals[3*corners[j]] += nx*angles[j];
-                vertexNormals[3*corners[j]+1] += ny*angles[j];
-                vertexNormals[3*corners[j]+2] += nz*angles[j];
+                var v = corners[j];
+                var top = 3*(6*i+j);
+                var bottom = 3*(6*i+j+3);
+                thickPositions[top] = positions[3*v] + nx;
+                thickPositions[top+1] = positions[3*v+1] + ny;
+                thickPositions[top+2] = positions[3*v+2] + nz;
+                thickPositions[bottom] = positions[3*v] - nx;
+                thickPositions[bottom+1] = positions[3*v+1] - ny;
+                thickPositions[bottom+2] = positions[3*v+2] - nz;
             }
-        }
-        for (var i=0;i<numVertices;i++){
-            var length = Math.sqrt(vertexNormals[3*i]*vertexNormals[3*i] + vertexNormals[3*i+1]*vertexNormals[3*i+1] + vertexNormals[3*i+2]*vertexNormals[3*i+2]);
-            if (length > 0){
-                vertexNormals[3*i] /= length;
-                vertexNormals[3*i+1] /= length;
-                vertexNormals[3*i+2] /= length;
-            }
-        }
-        //miter compensation: at a crease the vertex normal bisects the fold, divide out
-        //the cosine of the half fold angle so the walls keep their thickness (clamped 2x)
-        for (var i=0;i<numFaces;i++){
-            for (var j=0;j<3;j++){
-                var v = faces[i][j];
-                miterDots[v] += vertexNormals[3*v]*faceNormals[3*i] + vertexNormals[3*v+1]*faceNormals[3*i+1] + vertexNormals[3*v+2]*faceNormals[3*i+2];
-                miterCounts[v]++;
-            }
-        }
-        for (var i=0;i<numVertices;i++){
-            var miter = miterCounts[i] > 0 ? miterDots[i]/miterCounts[i] : 1;
-            if (miter < 0.5) miter = 0.5;
-            var scale = thickness/(2*miter);
-            var offsetX = vertexNormals[3*i]*scale, offsetY = vertexNormals[3*i+1]*scale, offsetZ = vertexNormals[3*i+2]*scale;
-            thickPositions[3*i] = positions[3*i] + offsetX;
-            thickPositions[3*i+1] = positions[3*i+1] + offsetY;
-            thickPositions[3*i+2] = positions[3*i+2] + offsetZ;
-            thickPositions[3*(i+numVertices)] = positions[3*i] - offsetX;
-            thickPositions[3*(i+numVertices)+1] = positions[3*i+1] - offsetY;
-            thickPositions[3*(i+numVertices)+2] = positions[3*i+2] - offsetZ;
         }
 
         thicknessMesh.geometry.attributes.position.needsUpdate = true;
@@ -452,9 +419,9 @@ function initModel(globals){
                 creases.length));
         }
 
-        //estimate how many material layers each hinge spans in the flat-folded state,
-        //used to limit fold angles when thickness simulation is on
-        if (globals.thickness) globals.thickness.assignLayerGaps(creases, faces.length);
+        //estimate how many material layers each hinge spans in the flat-folded state and
+        //each hinge's panel depth, used to limit fold angles when thickness simulation is on
+        if (globals.thickness) globals.thickness.assignLayerGaps(creases, faces, nodes);
 
         vertices = [];
         for (var i=0;i<nodes.length;i++){

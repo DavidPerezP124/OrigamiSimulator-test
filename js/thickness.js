@@ -35,22 +35,27 @@ function initThickness(globals){
     //returns the max fold angle magnitude for a crease, in radians
     function getCreaseThetaMax(crease){
         if (crease.type == 0 || !globals.simulateThickness) return Math.PI;
-        var t = globals.materialThickness*globals.scale;//pattern units -> simulation units
+        var t = globals.materialThickness;//pattern units - panelDepth is in pattern units too, the ratio is scale free
         if (!(t > 0)) return Math.PI;
         var gap = (crease.layerGap > 0 ? crease.layerGap : 1)*t;
-        var h = Math.min(crease.getLengthToNode1(), crease.getLengthToNode2());//panel depth at the hinge
+        var h = crease.panelDepth;//depth of the smaller rigid panel at this hinge, set by assignLayerGaps
         if (!(h > 0)) return Math.PI;
         var thetaMax = Math.PI - 2*Math.atan(gap/(2*h));
         return thetaMax > 0 ? thetaMax : 0;
     }
 
-    //sets crease.layerGap = number of material layers the hinge spans in the fully folded state
+    //sets crease.layerGap = number of material layers the hinge spans in the fully folded
+    //state, and crease.panelDepth = perpendicular extent of the smaller rigid panel at the
+    //hinge (pattern units), measured across the whole merged panel so the fold angle limit
+    //does not depend on triangulation density
     //returns true if a layer ordering was computed, false if the default (one layer) was kept
-    function assignLayerGaps(creases, numFaces){
+    function assignLayerGaps(creases, faces, nodes){
 
-        //layerGap is plain data owned by this module - creases are not required to declare it
+        var numFaces = faces.length;
+        //layerGap and panelDepth are plain data owned by this module
         for (var i=0;i<creases.length;i++){
             creases[i].layerGap = creases[i].type == 0 ? 0 : 1;
+            creases[i].panelDepth = 0;
         }
         if (numFaces == 0 || creases.length == 0) return false;
 
@@ -66,6 +71,7 @@ function initThickness(globals){
         }
 
         var foldedCreases = [];
+        var flatFoldable = true;
         for (var i=0;i<creases.length;i++){
             var crease = creases[i];
             var target = crease.type == 0 ? 0 : crease.getTargetTheta();
@@ -75,9 +81,48 @@ function initThickness(globals){
                 foldedCreases.push(crease);
             } else {
                 //intermediate target angle - the pattern has no flat-folded state to order
-                return false;
+                flatFoldable = false;
             }
         }
+
+        //collect the vertices of each rigid panel
+        var panelVertices = {};
+        for (var i=0;i<numFaces;i++){
+            var root = find(i);
+            if (panelVertices[root] === undefined) panelVertices[root] = {};
+            panelVertices[root][faces[i][0]] = true;
+            panelVertices[root][faces[i][1]] = true;
+            panelVertices[root][faces[i][2]] = true;
+        }
+        //panel depth per hinge: max perpendicular distance from the crease line over the
+        //whole rigid panel on each side, min across the two sides (the overlap extent)
+        for (var i=0;i<creases.length;i++){
+            var crease = creases[i];
+            if (crease.type == 0) continue;
+            var p0 = crease.edge.nodes[0].getOriginalPosition();
+            var p1 = crease.edge.nodes[1].getOriginalPosition();
+            var dirX = p1.x-p0.x, dirY = p1.y-p0.y, dirZ = p1.z-p0.z;
+            var dirLength = Math.sqrt(dirX*dirX+dirY*dirY+dirZ*dirZ);
+            if (dirLength == 0) continue;
+            dirX /= dirLength;
+            dirY /= dirLength;
+            dirZ /= dirLength;
+            var sideDepths = [0, 0];
+            var sideRoots = [find(crease.face1Index), find(crease.face2Index)];
+            for (var side=0;side<2;side++){
+                var verts = panelVertices[sideRoots[side]];
+                for (var key in verts){
+                    var position = nodes[key].getOriginalPosition();
+                    var vx = position.x-p0.x, vy = position.y-p0.y, vz = position.z-p0.z;
+                    var proj = vx*dirX+vy*dirY+vz*dirZ;
+                    var depthSq = vx*vx+vy*vy+vz*vz - proj*proj;
+                    if (depthSq > sideDepths[side]) sideDepths[side] = depthSq;
+                }
+            }
+            crease.panelDepth = Math.sqrt(Math.min(sideDepths[0], sideDepths[1]));
+        }
+
+        if (!flatFoldable) return false;
         if (foldedCreases.length == 0) return false;
 
         //orientation parity: a face is mirrored in the flat-folded state iff an odd number

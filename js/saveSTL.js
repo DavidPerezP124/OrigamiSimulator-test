@@ -112,6 +112,10 @@ function makeSaveGEO(doublesided){
         //thickness is applied after export scaling, so thickenOffset is in exported units
         //the thickened solid is already closed and two-sided, so doublesided is ignored
         thickenGeo(geo, globals.thickenOffset);
+    } else if (globals.simulateThickness && globals.materialThickness > 0){
+        //thickness simulation is on and the user hasn't asked for an explicit thickening -
+        //export the thickness being simulated (pattern units scaled to exported units)
+        thickenGeo(geo, globals.materialThickness*globals.exportScale);
     } else if (doublesided){
         var numFaces = geo.faces.length;
         for (var i=0;i<numFaces;i++){

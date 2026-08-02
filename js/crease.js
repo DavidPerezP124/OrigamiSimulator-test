@@ -18,6 +18,7 @@ function Crease(edge, face1Index, face2Index, targetTheta, type, node1, node2, i
     this.node2 = node2;//node at vertex of face 2
     this.index = index;
     this.layerGap = type == 0 ? 0 : 1;//num material layers this hinge spans in the flat-folded state
+    this.panelDepth = 0;//perpendicular extent of the smaller rigid panel at this hinge, pattern units
     node1.addCrease(this);
     node2.addCrease(this);
 }
