@@ -580,6 +580,12 @@ function initControls(globals){
     });
 
     setLink("#saveSVG", function(){
+        $('#exportSVGModal').modal('show');
+    });
+    setCheckbox("#separateMVSVG", globals.separateMVSVG, function(val){
+        globals.separateMVSVG = val;
+    });
+    setLink("#doSVGsave", function(){
         globals.pattern.saveSVG();
     });
     setLink("#addAnimationItem", function(){

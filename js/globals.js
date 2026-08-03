@@ -83,6 +83,9 @@ function initGlobals(){
         thickenOffset: 5,//total thickness in exported units (after exportScale is applied)
         polyFacesOBJ: true,
 
+        //save svg settings
+        separateMVSVG: false,//write the mountains and the valleys to two files instead of one
+
         //save fold settings
         foldUnits: "unit",
         triangulateFOLDexport: false,

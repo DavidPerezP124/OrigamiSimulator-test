@@ -1299,6 +1299,7 @@ function initCurvedFolding(globals) {
                 var line = document.createElementNS(ns, 'line');
                 var edge = rawFold.edges_vertices[i];
                 var vertex = rawFold.vertices_coords[edge[0]];
+                line.setAttribute('data-assignment', rawFold.edges_assignment[i]);
                 line.setAttribute('stroke', colorForAssignment(rawFold.edges_assignment[i]));
                 line.setAttribute('opacity', opacityForAngle(rawFold.edges_foldAngle[i], rawFold.edges_assignment[i]));
                 line.setAttribute('x1', vertex[0]);
@@ -2738,17 +2739,7 @@ function initCurvedFolding(globals) {
             return;
         }
         gtag('event', 'saveCP', { 'CC': true });
-
-        var serializer = new XMLSerializer();
-        var source = serializer.serializeToString($("#svgViewer>svg").get(0));
-        var svgBlob = new Blob([source], {type:"image/svg+xml;charset=utf-8"});
-        var svgUrl = URL.createObjectURL(svgBlob);
-        var downloadLink = document.createElement("a");
-        downloadLink.href = svgUrl;
-        downloadLink.download =  globals.filename + ".svg";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
+        globals.pattern.downloadPatternSVG();
     }
 
     function findIntersections(fold, tol){
