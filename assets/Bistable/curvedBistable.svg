@@ -5,16 +5,19 @@
      Mechanisms Through the Inflection of Degree Four Vertexes", ICRA 2021, Fig. 4(a).
      Traced from the figure's vector art: 16 columns of a/4 = 5.825mm and 6 rows of 9.35mm,
      i.e. 93.2 x 56.1 mm of crease pattern inside the 97 x 60 mm sheet the figure dimensions.
-     Black lines in the paper mark the facet boundaries that stay flat while the mechanism is
-     undeployed, so they are facet creases here rather than cuts. -->
+
+     The creases the paper figure draws black are folds, not facet boundaries: the long
+     diagonals and the two full-height spines at x = 349.5 / 582.5 are valleys, and the
+     chevrons at x = 407.75 / 524.25 mirror the mountain chevrons on the other side of each
+     spine. The figure also omits the mountain running from the left edge to x = 291.25 along
+     y = 93.5, which the mirrored row at y = 467.5 carries. With those two corrections every
+     interior vertex has even degree and satisfies Kawasaki's theorem. -->
 <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      x="0px" y="0px" width="932px" height="561px" viewBox="0 0 932 561" xml:space="preserve">
 <!-- sheet outline -->
 <path fill="none" stroke="#000000" stroke-miterlimit="10" d="M0,0 L932,0 M0,561 L932,561 M0,0 L0,561 M932,0 L932,561"/>
-<!-- facet (flat) - drawn black in the paper figure -->
-<path fill="none" stroke="#FFFF00" stroke-miterlimit="10" d="M349.5,0 L116.5,93.5 M116.5,93.5 L349.5,187 M815.5,93.5 L582.5,0 M582.5,187 L815.5,93.5 M815.5,280.5 L582.5,187 M582.5,374 L815.5,280.5 M815.5,467.5 L582.5,374 M582.5,561 L815.5,467.5 M349.5,187 L116.5,280.5 M116.5,280.5 L349.5,374 M349.5,374 L116.5,467.5 M116.5,467.5 L349.5,561 M349.5,0 L349.5,561 M582.5,0 L582.5,561 M349.5,0 L407.75,93.5 M407.75,93.5 L349.5,187 M349.5,187 L407.75,280.5 M407.75,280.5 L349.5,374 M349.5,374 L407.75,467.5 M407.75,467.5 L349.5,561 M582.5,0 L524.25,93.5 M524.25,93.5 L582.5,187 M582.5,187 L524.25,280.5 M524.25,280.5 L582.5,374 M582.5,374 L524.25,467.5 M524.25,467.5 L582.5,561 M116.5,467.5 L349.5,467.5"/>
-<!-- mountain -->
-<path fill="none" stroke="#FF0000" stroke-miterlimit="10" d="M815.5,561 L815.5,0 M116.5,561 L116.5,0 M291.25,280.5 L0,280.5 M291.25,467.5 L0,467.5 M640.75,93.5 L932,93.5 M640.75,280.5 L932,280.5 M932,467.5 L640.75,467.5 M291.25,93.5 L349.5,0 M349.5,187 L291.25,93.5 M640.75,93.5 L582.5,0 M582.5,187 L640.75,93.5 M291.25,280.5 L349.5,187 M349.5,374 L291.25,280.5 M640.75,280.5 L582.5,187 M582.5,374 L640.75,280.5 M291.25,467.5 L349.5,374 M349.5,561 L291.25,467.5 M640.75,467.5 L582.5,374 M582.5,561 L640.75,467.5 M582.5,187 L349.5,187 M582.5,374 L349.5,374 M116.5,187 L174.75,187 M116.5,374 L174.75,374 M757.25,187 L815.5,187 M815.5,374 L757.25,374"/>
-<!-- valley -->
-<path fill="none" stroke="#0000FF" stroke-miterlimit="10" d="M291.25,280.5 L640.75,280.5 M291.25,93.5 L640.75,93.5 M291.25,467.5 L640.75,467.5 M116.5,187 L0,187 M116.5,374 L0,374 M932,187 L815.5,187 M932,374 L815.5,374 M174.75,187 L349.5,187 M174.75,374 L349.5,374 M582.5,187 L757.25,187 M582.5,374 L757.25,374 M116.5,93.5 L174.75,0 M174.75,187 L116.5,93.5 M116.5,280.5 L174.75,187 M174.75,374 L116.5,280.5 M116.5,467.5 L174.75,374 M174.75,561 L116.5,467.5 M815.5,93.5 L757.25,0 M757.25,187 L815.5,93.5 M815.5,280.5 L757.25,187 M757.25,374 L815.5,280.5 M815.5,467.5 L757.25,374 M757.25,561 L815.5,467.5"/>
+<!-- mountain: outer spines, horizontal ribs, and the chevrons flanking each valley spine -->
+<path fill="none" stroke="#FF0000" stroke-miterlimit="10" d="M116.5,561 L116.5,0 M815.5,561 L815.5,0 M0,93.5 L291.25,93.5 M291.25,280.5 L0,280.5 M291.25,467.5 L0,467.5 M640.75,93.5 L932,93.5 M640.75,280.5 L932,280.5 M932,467.5 L640.75,467.5 M116.5,187 L174.75,187 M116.5,374 L174.75,374 M757.25,187 L815.5,187 M815.5,374 L757.25,374 M582.5,187 L349.5,187 M582.5,374 L349.5,374 M291.25,93.5 L349.5,0 M349.5,187 L291.25,93.5 M291.25,280.5 L349.5,187 M349.5,374 L291.25,280.5 M291.25,467.5 L349.5,374 M349.5,561 L291.25,467.5 M349.5,0 L407.75,93.5 M407.75,93.5 L349.5,187 M349.5,187 L407.75,280.5 M407.75,280.5 L349.5,374 M349.5,374 L407.75,467.5 M407.75,467.5 L349.5,561 M640.75,93.5 L582.5,0 M582.5,187 L640.75,93.5 M640.75,280.5 L582.5,187 M582.5,374 L640.75,280.5 M640.75,467.5 L582.5,374 M582.5,561 L640.75,467.5 M582.5,0 L524.25,93.5 M524.25,93.5 L582.5,187 M582.5,187 L524.25,280.5 M524.25,280.5 L582.5,374 M582.5,374 L524.25,467.5 M524.25,467.5 L582.5,561"/>
+<!-- valley: the two spines, the long diagonals, the edge zigzags and the middle of each rib -->
+<path fill="none" stroke="#0000FF" stroke-miterlimit="10" d="M349.5,0 L349.5,561 M582.5,0 L582.5,561 M291.25,93.5 L640.75,93.5 M291.25,280.5 L640.75,280.5 M291.25,467.5 L640.75,467.5 M116.5,187 L0,187 M116.5,374 L0,374 M932,187 L815.5,187 M932,374 L815.5,374 M174.75,187 L349.5,187 M174.75,374 L349.5,374 M582.5,187 L757.25,187 M582.5,374 L757.25,374 M349.5,0 L116.5,93.5 M116.5,93.5 L349.5,187 M349.5,187 L116.5,280.5 M116.5,280.5 L349.5,374 M349.5,374 L116.5,467.5 M116.5,467.5 L349.5,561 M582.5,0 L815.5,93.5 M815.5,93.5 L582.5,187 M582.5,187 L815.5,280.5 M815.5,280.5 L582.5,374 M582.5,374 L815.5,467.5 M815.5,467.5 L582.5,561 M116.5,93.5 L174.75,0 M174.75,187 L116.5,93.5 M116.5,280.5 L174.75,187 M174.75,374 L116.5,280.5 M116.5,467.5 L174.75,374 M174.75,561 L116.5,467.5 M815.5,93.5 L757.25,0 M757.25,187 L815.5,93.5 M815.5,280.5 L757.25,187 M757.25,374 L815.5,280.5 M815.5,467.5 L757.25,374 M757.25,561 L815.5,467.5"/>
 </svg>

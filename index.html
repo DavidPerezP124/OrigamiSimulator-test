@@ -1826,6 +1826,27 @@
         </div><!-- /.modal-content -->
     </div><!-- /.modal-dialog -->
 </div><!-- /.modal -->
+<div class="modal fade" id="exportSVGModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-med">
+        <div class="modal-content">
+            <div class="modal-body">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+                <b>SAVE PATTERN AS SVG</b><br/><br/>
+                <label class="bigLabel checkbox" for="separateMVSVG">
+                    <input id="separateMVSVG" data-toggle="checkbox" class="custom-checkbox layersSelector" type="checkbox"><span class="icons"><span class="icon-unchecked"></span><span class="icon-checked"></span></span>
+                    Save mountains and valleys as separate files
+                </label>
+                <span class="smallTxt">Writes <b>_mountains.svg</b> and <b>_valleys.svg</b> instead of a single file, so each fold direction can be scored in its own pass.
+                Both files keep the boundary and cut edges and share the viewBox of the full pattern, so they line up when stacked.</span>
+            </div>
+            <div class="modal-footer">
+                <button id="doSVGsave" type="button" class="actionButton btn btn-success" data-dismiss="modal">Save</button>
+            </div>
+        </div><!-- /.modal-content -->
+    </div><!-- /.modal-dialog -->
+</div><!-- /.modal -->
 <div class="modal fade" id="importFoldModal" tabindex="-1" role="dialog">
     <div class="modal-dialog modal-med">
         <div class="modal-content">

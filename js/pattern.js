@@ -481,6 +481,7 @@ function initPattern(globals){
                 var line = document.createElementNS(ns, 'line');
                 var edge = rawFold.edges_vertices[i];
                 var vertex = rawFold.vertices_coords[edge[0]];
+                line.setAttribute('data-assignment', rawFold.edges_assignment[i]);
                 line.setAttribute('stroke', colorForAssignment(rawFold.edges_assignment[i]));
                 line.setAttribute('opacity', opacityForAngle(rawFold.edges_foldAngle[i], rawFold.edges_assignment[i]));
                 line.setAttribute('x1', vertex[0]);
@@ -1135,7 +1136,7 @@ function initPattern(globals){
     }
 
     function saveSVG(){
-        
+
         if (globals.includeCurves) {
             globals.curvedFolding.saveSVG();
             return;
@@ -1145,16 +1146,52 @@ function initPattern(globals){
             return;
         }
         gtag('event', 'saveCP', { 'CC': false });
+        downloadPatternSVG();
+    }
+
+    //writes the svg currently in the pattern viewer, either whole or split into one file per fold direction
+    function downloadPatternSVG(){
+        var svg = $("#svgViewer>svg").get(0);
+        if (!svg) {
+            globals.warn("No crease pattern available.");
+            return;
+        }
+        if (!globals.separateMVSVG){
+            downloadSVGElement(svg, globals.filename + ".svg");
+            return;
+        }
+        //boundary and cut edges go in both files so the two passes register against each other
+        downloadSVGElement(svgWithAssignments(svg, ["M", "B", "C"]), globals.filename + "_mountains.svg");
+        //chrome throttles back to back downloads triggered in the same tick
+        setTimeout(function(){
+            downloadSVGElement(svgWithAssignments(svg, ["V", "B", "C"]), globals.filename + "_valleys.svg");
+        }, 200);
+    }
+
+    //a copy of svg holding only the edges whose assignment is in assignments
+    function svgWithAssignments(svg, assignments){
+        var copy = svg.cloneNode(true);
+        var lines = copy.querySelectorAll("line");
+        for (var i=lines.length-1;i>=0;i--){
+            if (assignments.indexOf(lines[i].getAttribute("data-assignment")) < 0) {
+                lines[i].parentNode.removeChild(lines[i]);
+            }
+        }
+        return copy;
+    }
+
+    function downloadSVGElement(svg, filename){
         var serializer = new XMLSerializer();
-        var source = serializer.serializeToString($("#svgViewer>svg").get(0));
+        var source = serializer.serializeToString(svg);
         var svgBlob = new Blob([source], {type:"image/svg+xml;charset=utf-8"});
         var svgUrl = URL.createObjectURL(svgBlob);
         var downloadLink = document.createElement("a");
         downloadLink.href = svgUrl;
-        downloadLink.download =  globals.filename + ".svg";
+        downloadLink.download = filename;
         document.body.appendChild(downloadLink);
         downloadLink.click();
         document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(svgUrl);
     }
 
     function findIntersections(fold, tol){
@@ -1283,6 +1320,7 @@ function initPattern(globals){
     return {
         loadSVG: loadSVG,
         saveSVG: saveSVG,
+        downloadPatternSVG: downloadPatternSVG,
         getFoldData: getFoldData,
         getTriangulatedFaces: getTriangulatedFaces,
         setFoldData: setFoldData
